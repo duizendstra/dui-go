@@ -1,0 +1,106 @@
+version: '3'
+dotenv: [".env"]
+
+vars:
+  AI_OUTPUT_FILE: ai_context.txt
+
+tasks:
+  tidy:
+    summary: "Tidy Go modules"
+    cmds:
+      - go mod tidy
+    preconditions:
+      - "command -v go"
+
+  update-deps:
+    summary: "Update dependencies"
+    cmds:
+      - go get -u ./...
+    status:
+      - git diff --exit-code go.mod go.sum
+
+  # --- Code Quality ---
+
+  format:
+    summary: "Format code"
+    cmds:
+      - go fmt ./...
+    status:
+      - git diff --exit-code
+
+  vet:
+    summary: "Run go vet"
+    cmds:
+      - go vet ./...
+
+  test:
+    summary: "Run tests"
+    cmds:
+      - go test ./... -failfast -v
+
+  # --- Git ---
+
+  commit:
+    summary: "Commit and push changes"
+    cmds:
+      - git add .
+      - git commit -m "Automated commit (Taskfile)"
+      - git push
+    preconditions:
+      - "command -v git"
+      - "git diff --quiet || (echo 'Uncommitted changes exist' && exit 1)"
+
+  # --- AI Context Generation ---
+
+  ai: 
+    summary: "Generate a reference file for AI with unambiguous file separation."
+    cmds:
+      - |
+        OUTPUT_FILE="{{.AI_OUTPUT_FILE}}"
+
+        > "$OUTPUT_FILE"  # Clear the output file
+
+        # echo -e "### User Intention\nPlease forget previous instances of this code and remember this newest version. Include all relevant context to fully replace prior information." >> "$OUTPUT_FILE"
+        echo -e "\n### Code Content\n" >> "$OUTPUT_FILE"
+
+        # Combined find command with grouped execution and passed environment variable
+        find . -type f \( -name "*.go" -o -name "*.mod" -o -name "*.md" \) \
+          -exec sh -c '
+            echo -e "\n======== FILE: $1 ========\n" >> "'"$OUTPUT_FILE"'"
+            cat "$1" >> "'"$OUTPUT_FILE"'"
+            echo -e "\n======== END FILE: $1 ========\n" >> "'"$OUTPUT_FILE"'"
+          ' sh {} \; || { echo "Error: File processing error." >&2; exit 1; }
+
+        # echo -e "\n### Prompt Information\n" >> "$OUTPUT_FILE"
+        # cat <<EOL >> "$OUTPUT_FILE"
+        # # Use the provided code and context to overwrite any existing references to previous versions of this code. This new version should replace all prior information in memory. Ensure all relevant details for accurate replacement are included.
+        # EOL
+    silent: true
+
+  # --- Combined Tasks ---
+  default:
+    deps: [init, update-deps, quality, build, commit]
+    summary: "Update, tidy, format, vet, test, build, and commit"
+
+  quality:
+    deps: [format, vet, test]
+
+  default:
+    deps: [init, update-deps, quality, build, commit]
+    summary: "Update, tidy, format, vet, test, build, and commit"
+
+  clean:
+    cmds:
+      - rm -rf bin/ go.mod go.sum || true
+      - go clean -cache -modcache -testcache
+
+  init:
+    summary: "Initialize Go module and tidy dependencies"
+    cmds:
+      - go mod init github.com/duizendstra-com/{{.REPOSITORY}}
+      - go mod tidy
+    once: true
+    preconditions:
+      - sh: '[ ! -f go.mod ] && [ ! -f go.sum ]'
+        msg: "Error: go.mod or go.sum already exists. Run 'task clean' first to reset."
+    silent: true

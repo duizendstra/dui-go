@@ -1,0 +1,2536 @@
+
+### Code Content
+
+
+======== FILE: ./README.md ========
+
+# go-dui
+
+`go-dui` is a foundational library of utilities designed to streamline the development of Go-based services, particularly within the context of the EasyFlor project and Google Cloud Platform. It provides essential components for common tasks such as authentication, caching, environment variable management, structured error handling, key-value data storage, and logging.
+
+## Packages
+
+The `go-dui` library is organized into several packages, each addressing a specific area of functionality:
+
+### Authentication (`go-dui/authentication`)
+
+This package provides a robust mechanism for managing authentication tokens. It defines interfaces for `Token`, `TokenManager`, and `TokenFetcher`, enabling flexible token retrieval, caching, and refresh strategies.
+
+**Key Features:**
+
+*   **`Token` struct:** Represents a token with its value and expiration time.
+*   **`TokenManager` interface:** Defines methods for retrieving and managing tokens.
+*   **`TokenFetcher` interface:** Abstracts the process of fetching tokens from an external source.
+*   **Thread-safe `TokenManager` implementation:** Ensures safe concurrent access to tokens.
+
+### Cache (`go-dui/cache`)
+
+This package offers a generic `Cache` interface for in-memory and external caching. It supports customizable expiration policies and provides a basic in-memory cache implementation.
+
+**Key Features:**
+
+*   **`Cache` interface:** Defines basic `Get` and `Set` operations for caching.
+*   **`Options` and `Option`:** Allow configuration of cache behavior, including expiration.
+*   **`inMemoryCache`:** A thread-safe in-memory cache implementation.
+
+### Env (`go-dui/env`)
+
+This package simplifies environment variable handling by providing type-safe accessors and default value support. It allows defining namespaces for organizing environment variables.
+
+**Key Features:**
+
+*   **`Namespace` type:** Represents a namespace for environment variables.
+*   **Type-safe accessors:** `Get()`, `Int()`, `Bool()`, and their variants for different data types.
+*   **Default value support:** `GetDefault()`, `IntDefault()`, `BoolDefault()` for specifying default values.
+*   **`Must` variants:** `MustGet()`, `MustInt()`, `MustBool()` for panicking on missing or invalid values.
+
+### Errors (`go-dui/errors`)
+
+This package enhances Go's error handling by introducing error codes and associating them with HTTP status codes. It provides a convenient way to categorize errors and handle them appropriately in API responses.
+
+**Key Features:**
+
+*   **`Error` interface:** Extends the standard `error` interface with a `Code()` method.
+*   **`Errorf()`:** Creates formatted errors with codes.
+*   **`Is()`:** Checks if an error is of a specific code.
+*   **`StatusCode()`:** Returns the HTTP status code associated with an error code.
+
+### Firestore (`go-dui/firestore`)
+
+This package provides a key-value store abstraction over Google Cloud Firestore. It enables storing and retrieving arbitrary data structures by serializing them as JSON. It also implements the `cache.Cache` interface, allowing Firestore to be used as a cache backend.
+
+**Key Features:**
+
+*   **`FirestoreKV`:** Implements `cache.Cache` for using Firestore as a cache.
+*   **JSON serialization:** Stores and retrieves values as JSON.
+*   **Retry mechanism:** Enhances robustness against transient errors.
+
+### Store (`go-dui/store`)
+
+This package defines a generic key-value `Store` interface and provides a `FirestoreStore` implementation that uses Firestore as the backend.
+
+**Key Features:**
+
+*   **`Store` interface:** Defines basic `Get`, `Set`, and `Delete` operations.
+*   **`FirestoreStore`:** Implements `Store` using Firestore.
+*   **Generic `Document` type:** Supports flexible data representation.
+
+### Logging/Cloudlogging (`go-dui/logging/cloudlogging`)
+
+This package provides a logging handler specifically designed for Google Cloud Logging. It formats log entries according to Cloud Logging's structured logging format and maps standard log levels to Cloud Logging severities.
+
+**Key Features:**
+
+*   **`NewHandler()`:** Creates a logging handler for Cloud Logging.
+*   **Structured logging:** Formats log entries for optimal Cloud Logging integration.
+*   **Severity mapping:** Maps log levels to Cloud Logging severities.
+*   **`NewMiddleware()`:** Creates a middleware for adding request details to log context.
+
+## Getting Started
+
+1. **Installation:**
+
+    ```bash
+    go get github.com/path/to/go-dui # Replace with the actual path to the go-dui repository
+    ```
+
+2. **Usage:**
+
+    Import the desired packages into your Go code:
+
+    ```go
+    import (
+        "github.com/path/to/go-dui/authentication"
+        "github.com/path/to/go-dui/cache"
+        "github.com/path/to/go-dui/env"
+        "github.com/path/to/go-dui/errors"
+        "github.com/path/to/go-dui/firestore"
+        "github.com/path/to/go-dui/store"
+        "github.com/path/to/go-dui/logging/cloudlogging"
+    )
+    ```
+
+    Refer to the individual package documentation and examples for detailed usage instructions.
+
+## Building and Testing
+
+To build the `go-dui` library, run:
+
+```bash
+task build
+
+======== END FILE: ./README.md ========
+
+
+======== FILE: ./firestore/firestorekv.go ========
+
+package firestore
+
+import (
+	"context"
+	"fmt"
+
+	"cloud.google.com/go/firestore"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+)
+
+// KV represents simple key-value operations. Implementations should handle non-existent keys
+// by returning an empty string and no error from Get.
+type KV interface {
+	// Get retrieves the value associated with a key. If the key does not exist,
+	// it returns an empty string and no error.
+	Get(ctx context.Context, key string) (string, error)
+
+	// Set stores the value under the given key.
+	Set(ctx context.Context, key, value string) error
+
+	// Close releases any resources associated with this KV implementation.
+	Close() error
+}
+
+// FirestoreKV provides a key-value abstraction using a Firestore collection.
+// Documents are stored with a "value" field. Missing documents return empty strings from Get.
+type FirestoreKV struct {
+	client     *firestore.Client
+	collection string
+}
+
+// NewKV creates a FirestoreKV instance using the specified projectID and collection.
+// It returns an error if the Firestore client cannot be created.
+func NewKV(ctx context.Context, projectID, collection string) (*FirestoreKV, error) {
+	client, err := firestore.NewClient(ctx, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Firestore client: %w", err)
+	}
+	return &FirestoreKV{client: client, collection: collection}, nil
+}
+
+// Get retrieves the value for the given key from Firestore. If the key does not exist,
+// it returns an empty string and no error.
+func (f *FirestoreKV) Get(ctx context.Context, key string) (string, error) {
+	docRef := f.client.Collection(f.collection).Doc(key)
+	docSnap, err := docRef.Get(ctx)
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			// Key does not exist, return empty string and no error.
+			return "", nil
+		}
+		return "", fmt.Errorf("firestore get error (key=%s): %w", key, err)
+	}
+
+	var data map[string]interface{}
+	if err := docSnap.DataTo(&data); err != nil {
+		return "", fmt.Errorf("firestore data decode error (key=%s): %w", key, err)
+	}
+
+	value, _ := data["value"].(string)
+	return value, nil
+}
+
+// Set writes a value at the given key in Firestore. Overwrites existing values.
+func (f *FirestoreKV) Set(ctx context.Context, key, value string) error {
+	docRef := f.client.Collection(f.collection).Doc(key)
+	_, err := docRef.Set(ctx, map[string]interface{}{"value": value}, firestore.MergeAll)
+	if err != nil {
+		return fmt.Errorf("firestore set error (key=%s): %w", key, err)
+	}
+	return nil
+}
+
+// Close releases Firestore resources. After calling Close, the FirestoreKV should no longer
+// be used.
+func (f *FirestoreKV) Close() error {
+	return f.client.Close()
+}
+
+======== END FILE: ./firestore/firestorekv.go ========
+
+
+======== FILE: ./firestore/firestorekv_test.go ========
+
+package firestore
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/duizendstra-com/go-dui/internal/testutil"
+)
+
+// TestMockFirestoreKV ensures that MockFirestoreKV behaves like a FirestoreKV in-memory.
+// No external Firestore emulator or credentials are required for this test.
+func TestMockFirestoreKV(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	kv := testutil.NewMockFirestoreKV() // Use the mock instead of real FirestoreKV
+	defer kv.Close()
+
+	// Test Set operation
+	if err := kv.Set(ctx, "testKey", "testValue"); err != nil {
+		t.Fatalf("Set failed: %v", err)
+	}
+
+	// Test Get existing key
+	val, err := kv.Get(ctx, "testKey")
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+	if val != "testValue" {
+		t.Errorf("expected 'testValue', got %q", val)
+	}
+
+	// Test Get non-existent key
+	val, err = kv.Get(ctx, "nonExistent")
+	if err != nil {
+		t.Fatalf("Get nonExistent failed: %v", err)
+	}
+	if val != "" {
+		t.Errorf("expected empty for nonExistent, got %q", val)
+	}
+}
+
+======== END FILE: ./firestore/firestorekv_test.go ========
+
+
+======== FILE: ./firestore/doc.go ========
+
+// Package firestore provides a key-value abstraction on top of Google Cloud Firestore.
+//
+// It defines a KV interface representing simple key-value operations. The FirestoreKV
+// type is a concrete implementation of KV that uses a Firestore collection. If a key does
+// not exist, Get returns an empty string without error. Set writes values and Close
+// releases Firestore resources.
+//
+// This package does not include mocks for testing. To test code that depends on
+// FirestoreKV without connecting to a real Firestore instance, use the MockFirestoreKV
+// from the testutil package.
+package firestore
+
+======== END FILE: ./firestore/doc.go ========
+
+
+======== FILE: ./firestore/example_test.go ========
+
+package firestore
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	"github.com/duizendstra-com/go-dui/internal/testutil"
+)
+
+// ExampleFirestoreKV demonstrates how to use a KV implementation. Here we use
+// a MockFirestoreKV from the testutil package to avoid depending on a real Firestore.
+// In production code, you would use NewKV(ctx, "your-project-id", "your-collection").
+func ExampleFirestoreKV() {
+	ctx := context.Background()
+
+	// Use a mock KV for demonstration. In production, call NewKV(ctx, "your-project-id", "your-collection")
+	kv := testutil.NewMockFirestoreKV()
+	defer kv.Close()
+
+	// Set a value
+	if err := kv.Set(ctx, "demoKey", "demoValue"); err != nil {
+		log.Fatalf("Set failed: %v", err)
+	}
+
+	// Get the value
+	val, err := kv.Get(ctx, "demoKey")
+	if err != nil {
+		log.Fatalf("Get failed: %v", err)
+	}
+	fmt.Println("demoKey:", val)
+
+	// Get a non-existent key returns empty string
+	val, err = kv.Get(ctx, "missingKey")
+	if err != nil {
+		log.Fatalf("Get failed: %v", err)
+	}
+	fmt.Println("missingKey:", val)
+}
+
+======== END FILE: ./firestore/example_test.go ========
+
+
+======== FILE: ./internal/testutil/doc.go ========
+
+// Package testutil provides testing utilities, including mock implementations
+// of various interfaces (e.g., cache.Cache, firestore.KV) used by other packages.
+//
+// These mocks allow developers to test code that depends on these interfaces
+// without requiring real services or complex setups. Keep this package focused
+// on test-related functionality, ensuring production code remains free of
+// testing scaffolding.
+package testutil
+
+======== END FILE: ./internal/testutil/doc.go ========
+
+
+======== FILE: ./internal/testutil/mock_firestorekv_test.go ========
+
+package testutil
+
+import (
+	"context"
+	"testing"
+)
+
+func TestMockFirestoreKV(t *testing.T) {
+	mkv := NewMockFirestoreKV()
+
+	ctx := context.Background()
+	if err := mkv.Set(ctx, "testKey", "testValue"); err != nil {
+		t.Fatalf("Set failed: %v", err)
+	}
+
+	val, err := mkv.Get(ctx, "testKey")
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+	if val != "testValue" {
+		t.Errorf("expected 'testValue', got %q", val)
+	}
+
+	val, err = mkv.Get(ctx, "nonExistent")
+	if err != nil {
+		t.Fatalf("Get nonExistent failed: %v", err)
+	}
+	if val != "" {
+		t.Errorf("expected empty for nonExistent, got %q", val)
+	}
+}
+
+======== END FILE: ./internal/testutil/mock_firestorekv_test.go ========
+
+
+======== FILE: ./internal/testutil/mock_cache.go ========
+
+package testutil
+
+import (
+	"sync"
+
+	"github.com/duizendstra-com/go-dui/cache"
+)
+
+// Compile-time check that MockCache implements cache.Cache
+var _ cache.Cache = (*MockCache)(nil)
+
+// MockCache is a mock implementation of the cache.Cache interface, designed
+// for testing. It records calls to its methods, storing keys and values in an
+// internal map.
+//
+// It is safe to call these methods concurrently, but reading the recorded calls
+// while concurrent operations are ongoing is not recommended.
+type MockCache struct {
+	mu       sync.Mutex
+	data     map[string]interface{}
+	GetCalls []string
+	SetCalls []struct {
+		Key   string
+		Value interface{}
+	}
+	SetAllCalls []map[string]interface{}
+	FlushCalls  int
+}
+
+// NewMockCache returns a new, empty MockCache instance. This mock can be used
+// in tests to verify key-value operations that rely on the cache.Cache interface.
+func NewMockCache() *MockCache {
+	return &MockCache{
+		data: make(map[string]interface{}),
+	}
+}
+
+// Set records the call and stores a value under the given key.
+func (m *MockCache) Set(key string, value interface{}) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.SetCalls = append(m.SetCalls, struct {
+		Key   string
+		Value interface{}
+	}{Key: key, Value: value})
+	m.data[key] = value
+}
+
+// Get records the call and retrieves the value associated with the given key.
+func (m *MockCache) Get(key string) (interface{}, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.GetCalls = append(m.GetCalls, key)
+	val, ok := m.data[key]
+	return val, ok
+}
+
+// SetAll records the call and stores multiple key-value pairs at once.
+func (m *MockCache) SetAll(values map[string]interface{}) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.SetAllCalls = append(m.SetAllCalls, values)
+	for k, v := range values {
+		m.data[k] = v
+	}
+}
+
+// GetAll returns a copy of all key-value pairs currently stored.
+func (m *MockCache) GetAll() map[string]interface{} {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	copyMap := make(map[string]interface{}, len(m.data))
+	for k, v := range m.data {
+		copyMap[k] = v
+	}
+	return copyMap
+}
+
+// Flush records the call and removes all entries from the cache.
+func (m *MockCache) Flush() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.FlushCalls++
+	m.data = make(map[string]interface{})
+}
+
+======== END FILE: ./internal/testutil/mock_cache.go ========
+
+
+======== FILE: ./internal/testutil/mock_cache_test.go ========
+
+package testutil
+
+import (
+	"testing"
+)
+
+func TestMockCache(t *testing.T) {
+	mc := NewMockCache()
+
+	mc.Set("foo", "bar")
+	val, ok := mc.Get("foo")
+	if !ok || val != "bar" {
+		t.Errorf("expected 'bar', got %v", val)
+	}
+
+	mc.SetAll(map[string]interface{}{"a": 1, "b": 2})
+	all := mc.GetAll()
+	if len(all) != 3 {
+		t.Errorf("expected 3 items, got %d", len(all))
+	}
+
+	mc.Flush()
+	all = mc.GetAll()
+	if len(all) != 0 {
+		t.Error("expected no items after flush")
+	}
+}
+
+======== END FILE: ./internal/testutil/mock_cache_test.go ========
+
+
+======== FILE: ./internal/testutil/mock_firestorekv.go ========
+
+package testutil
+
+import (
+	"context"
+	"sync"
+)
+
+// MockFirestoreKV is an in-memory mock that simulates the behavior of a FirestoreKV.
+// It stores keys and values in a map and returns empty strings for missing keys,
+// just like a FirestoreKV would if a document doesn't exist.
+//
+// This mock never simulates errors by default, but you can add logic to do so if needed.
+type MockFirestoreKV struct {
+	mu   sync.Mutex
+	data map[string]string
+}
+
+// NewMockFirestoreKV creates a new MockFirestoreKV instance with an empty in-memory map.
+func NewMockFirestoreKV() *MockFirestoreKV {
+	return &MockFirestoreKV{data: make(map[string]string)}
+}
+
+// Get retrieves the value associated with the given key.
+// If the key does not exist, returns an empty string and no error.
+func (m *MockFirestoreKV) Get(ctx context.Context, key string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	val := m.data[key]
+	return val, nil
+}
+
+// Set stores the given value under the specified key.
+func (m *MockFirestoreKV) Set(ctx context.Context, key, value string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.data[key] = value
+	return nil
+}
+
+// Close is a no-op for MockFirestoreKV, present only to match the FirestoreKV interface.
+func (m *MockFirestoreKV) Close() error {
+	return nil
+}
+
+======== END FILE: ./internal/testutil/mock_firestorekv.go ========
+
+
+======== FILE: ./LICENSE.md ========
+
+# License
+
+**Proprietary Software License (Generic - Consultant-Activated)**
+
+This is a generic proprietary software license for the `dui-go-jato` library (the "Software"), owned by Duizendstra.com BV ("Licensor"). This license automatically applies to any client ("Licensee") of Jasper Duizendstra ("Consultant") for whom Consultant implements or integrates the Software, *provided that* Consultant is authorized by Licensor to provide such services.
+
+Copyright © 2024-2025 duizendstra.com BV. All rights reserved.
+
+The Software is confidential and proprietary to Licensor. By using, receiving, or accessing the Software, Licensee agrees to be bound by this License.
+
+**1. License Grant.**
+
+Subject to this License, Licensor grants Licensee a non-exclusive, non-transferable, non-sublicensable, limited license to use the Software solely for Licensee's internal business purposes, *as implemented and/or integrated by Consultant*. The specific scope of use (permitted purposes, users, locations, instances, etc.) is determined by the agreement *between Licensee and Consultant*, but in no event shall the use exceed what is reasonably necessary for Licensee's internal operations in connection with Consultant's services.
+
+**2. Restrictions.**
+
+Licensee shall *not*:
+
+*   Distribute, sublicense, sell, rent, lease, loan, transmit, or otherwise transfer the Software to any third party (excepting Consultant as necessary for implementation/integration).
+*   Reverse engineer, decompile, disassemble, or attempt to derive the source code.
+*   Modify, adapt, translate, or create derivative works (except as necessary for integration by Consultant).
+*   Remove proprietary notices.
+*   Use the Software unlawfully or to damage Licensor's systems.
+*   Develop competing products.
+*   Copy the Software (except for reasonable backup).
+*   Circumvent technological protection measures.
+*   Publish benchmark results without Licensor's prior written consent.
+
+**3. Ownership & Confidentiality.**
+
+The Software is licensed, not sold. Licensor retains all rights, title, and interest, including all intellectual property. The Software is confidential; Licensee shall protect it with at least reasonable care. This survives termination.
+
+**4. Termination.**
+
+This License may be terminated by Licensor immediately upon written notice if Licensee breaches this License.  This License *automatically terminates* if the agreement between Licensee and Consultant regarding the implementation/integration of the Software is terminated. Upon termination, Licensee must cease all use and destroy all copies of the Software, certifying this in writing to Licensor. Sections 3, 4, 6, 7, 8, and 9 survive termination.
+
+**5. Disclaimer of Warranty.**
+
+THE SOFTWARE IS PROVIDED "AS IS," WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
+
+**6. Limitation of Liability.**
+
+IN NO EVENT SHALL LICENSOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES (INCLUDING, BUT NOT LIMITED TO, LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING FROM THE USE OF THE SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. LICENSOR'S AGGREGATE LIABILITY SHALL NOT EXCEED THE AMOUNT PAID BY LICENSEE TO CONSULTANT FOR THE SERVICES DIRECTLY RELATED TO THE SOFTWARE, IF ANY.
+
+**7. Governing Law.**
+
+This License is governed by the laws of The Netherlands. Disputes shall be resolved exclusively in the courts of The Netherlands.
+
+**8. General.**
+
+This License, *along with the agreement between Licensee and Consultant*, constitutes the entire agreement between Licensor and Licensee regarding the Software. If any provision is invalid, the rest remain in effect. Failure to enforce a right is not a waiver. Licensee may not assign this License without Licensor's prior written consent.
+
+**9. Notices.**
+
+Notices to Licensor:
+
+Jasper Duizendstra
+Duizendstra.com BV
+jaser@duizendstra.com
+
+Notices to the Licensee shall be made according to the notice provisions within the agreement between the Licensee and the Consultant.
+======== END FILE: ./LICENSE.md ========
+
+
+======== FILE: ./env/doc.go ========
+
+// Package env provides functionality for loading and validating environment variables.
+// It allows you to define a list of expected environment variables, specifying whether
+// they are mandatory, have a default value, or require validation.
+//
+// Typical usage:
+//
+//	loader := env.NewEnvLoader()
+//	vars := []env.EnvVar{
+//	  {Key: "API_KEY", Mandatory: true},
+//	  {Key: "PORT", Mandatory: false, DefaultValue: "8080"},
+//	}
+//	envMap, err := loader.LoadEnv(ctx, vars)
+//	if err != nil {
+//	  // handle error (e.g., missing mandatory variable)
+//	}
+//
+// The EnvLoader returns errors if mandatory variables are missing or validation fails.
+// Using this approach simplifies startup configuration and ensures that your application
+// clearly reports configuration issues through returned errors.
+package env
+
+======== END FILE: ./env/doc.go ========
+
+
+======== FILE: ./env/env.go ========
+
+package env
+
+import (
+	"context"
+	"fmt"
+	"os"
+)
+
+// EnvVar represents a configuration for a single environment variable.
+// - Key: the variable name.
+// - Mandatory: if true, an error is returned if not set.
+// - DefaultValue: used if optional and not set.
+// - Validation: optional function to validate the value.
+type EnvVar struct {
+	Key          string
+	Mandatory    bool
+	DefaultValue string
+	Validation   func(string) bool
+}
+
+// EnvLoader reads and validates environment variables. It no longer logs, only returns errors.
+type EnvLoader struct{}
+
+// NewEnvLoader constructs an EnvLoader. It does not require a logger.
+func NewEnvLoader() *EnvLoader {
+	return &EnvLoader{}
+}
+
+// handleEnvError returns an error about missing or invalid environment variables.
+func (el *EnvLoader) handleEnvError(key string, message string) error {
+	return fmt.Errorf(message, key)
+}
+
+// LoadEnv reads, validates, and returns environment variables based on the given configuration.
+// Returns an error if a mandatory variable is missing or validation fails.
+func (el *EnvLoader) LoadEnv(ctx context.Context, vars []EnvVar) (map[string]string, error) {
+	envMap := make(map[string]string)
+
+	for _, v := range vars {
+		value, exists := os.LookupEnv(v.Key)
+
+		if !exists && v.Mandatory {
+			return nil, el.handleEnvError(v.Key,
+				"Mandatory environment variable is missing: %s")
+		}
+
+		if !exists {
+			value = v.DefaultValue
+		}
+
+		if v.Validation != nil && !v.Validation(value) {
+			return nil, el.handleEnvError(v.Key,
+				"Validation failed for environment variable: %s")
+		}
+
+		envMap[v.Key] = value
+	}
+
+	return envMap, nil
+}
+
+======== END FILE: ./env/env.go ========
+
+
+======== FILE: ./env/example_test.go ========
+
+package env
+
+import (
+	"context"
+	"fmt"
+	"os"
+)
+
+func ExampleEnvLoader_LoadEnv() {
+	// Set environment variables for mandatory fields so the example passes.
+	os.Setenv("API_KEY", "secret-api-key")
+	os.Setenv("DATABASE_DSN", "user:pass@tcp(localhost:3306)/dbname")
+
+	// Define the list of environment variables to load.
+	vars := []EnvVar{
+		{Key: "API_KEY", Mandatory: true},                           // Mandatory
+		{Key: "DATABASE_DSN", Mandatory: true},                      // Mandatory
+		{Key: "PORT", Mandatory: false, DefaultValue: "8080"},       // Optional with default
+		{Key: "ENV", Mandatory: false, DefaultValue: "development"}, // Optional with default
+	}
+
+	// Create an EnvLoader without a logger.
+	loader := NewEnvLoader()
+
+	// Load the environment variables based on the defined configuration.
+	ctx := context.Background()
+	envMap, err := loader.LoadEnv(ctx, vars)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+
+	// Print the successfully loaded environment variables.
+	fmt.Println("Loaded env:", envMap)
+
+	// Output:
+	// Loaded env: map[API_KEY:secret-api-key DATABASE_DSN:user:pass@tcp(localhost:3306)/dbname ENV:development PORT:8080]
+}
+
+======== END FILE: ./env/example_test.go ========
+
+
+======== FILE: ./env/env_test.go ========
+
+package env
+
+import (
+	"context"
+	"os"
+	"testing"
+)
+
+func TestLoadEnv(t *testing.T) {
+	loader := NewEnvLoader()
+	ctx := context.Background()
+
+	t.Setenv("MANDATORY_VAR", "mandatory_value")
+	t.Setenv("OPTIONAL_VAR", "optional_value")
+
+	// Define a validation function that only allows values that start with "valid"
+	validFunc := func(val string) bool {
+		return len(val) >= 5 && val[:5] == "valid"
+	}
+
+	vars := []EnvVar{
+		{Key: "MANDATORY_VAR", Mandatory: true},
+		{Key: "OPTIONAL_VAR", DefaultValue: "default_opt"},
+		{Key: "MISSING_OPTIONAL", DefaultValue: "default_missing"},
+		{Key: "VALIDATED_VAR", DefaultValue: "valid_value", Validation: validFunc},
+	}
+
+	t.Setenv("VALIDATED_VAR", "valid_data")
+
+	envMap, err := loader.LoadEnv(ctx, vars)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Check mandatory var
+	if got := envMap["MANDATORY_VAR"]; got != "mandatory_value" {
+		t.Errorf("expected MANDATORY_VAR=mandatory_value, got %q", got)
+	}
+
+	// Check optional var
+	if got := envMap["OPTIONAL_VAR"]; got != "optional_value" {
+		t.Errorf("expected OPTIONAL_VAR=optional_value, got %q", got)
+	}
+
+	// Check missing optional var uses default
+	if got := envMap["MISSING_OPTIONAL"]; got != "default_missing" {
+		t.Errorf("expected MISSING_OPTIONAL=default_missing, got %q", got)
+	}
+
+	// Check validated var
+	if got := envMap["VALIDATED_VAR"]; got != "valid_data" {
+		t.Errorf("expected VALIDATED_VAR=valid_data, got %q", got)
+	}
+
+	// Test missing mandatory variable
+	os.Unsetenv("MANDATORY_VAR")
+	varsMissingMandatory := []EnvVar{
+		{Key: "MANDATORY_VAR", Mandatory: true},
+	}
+
+	_, err = loader.LoadEnv(ctx, varsMissingMandatory)
+	if err == nil {
+		t.Error("expected error for missing mandatory variable, got nil")
+	}
+
+	// Test validation failure
+	t.Setenv("VALIDATED_VAR", "invalid_value") // does not start with "valid"
+	varsValidationFail := []EnvVar{
+		{Key: "VALIDATED_VAR", DefaultValue: "valid_value", Validation: validFunc},
+	}
+
+	_, err = loader.LoadEnv(ctx, varsValidationFail)
+	if err == nil {
+		t.Error("expected error for invalid VALIDATED_VAR value, got nil")
+	} else {
+		expected := "Validation failed for environment variable: VALIDATED_VAR"
+		if msg := err.Error(); msg[:len(expected)] != expected {
+			t.Errorf("expected error starting with %q, got %q", expected, msg)
+		}
+	}
+}
+
+func TestLoadEnv_NoVariables(t *testing.T) {
+	loader := NewEnvLoader()
+	ctx := context.Background()
+
+	envMap, err := loader.LoadEnv(ctx, nil)
+	if err != nil {
+		t.Fatalf("expected no error with no vars, got %v", err)
+	}
+	if len(envMap) != 0 {
+		t.Errorf("expected empty env map, got %d entries", len(envMap))
+	}
+}
+
+func TestLoadEnv_OptionalDefault(t *testing.T) {
+	loader := NewEnvLoader()
+	ctx := context.Background()
+
+	vars := []EnvVar{
+		{Key: "NON_EXISTENT", DefaultValue: "default_value"},
+	}
+	envMap, err := loader.LoadEnv(ctx, vars)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := envMap["NON_EXISTENT"]; got != "default_value" {
+		t.Errorf("expected NON_EXISTENT=default_value, got %q", got)
+	}
+}
+
+======== END FILE: ./env/env_test.go ========
+
+
+======== FILE: ./go.mod ========
+
+module github.com/duizendstra-com/go-dui
+
+go 1.23.5
+
+require (
+	cloud.google.com/go/compute/metadata v0.6.0
+	google.golang.org/grpc v1.70.0
+)
+
+require (
+	cloud.google.com/go v0.118.1 // indirect
+	cloud.google.com/go/auth v0.14.1 // indirect
+	cloud.google.com/go/auth/oauth2adapt v0.2.7 // indirect
+	cloud.google.com/go/longrunning v0.6.4 // indirect
+	github.com/felixge/httpsnoop v1.0.4 // indirect
+	github.com/go-logr/logr v1.4.2 // indirect
+	github.com/go-logr/stdr v1.2.2 // indirect
+	github.com/google/s2a-go v0.1.9 // indirect
+	github.com/googleapis/enterprise-certificate-proxy v0.3.4 // indirect
+	github.com/googleapis/gax-go/v2 v2.14.1 // indirect
+	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.59.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.59.0 // indirect
+	go.opentelemetry.io/otel v1.34.0 // indirect
+	go.opentelemetry.io/otel/metric v1.34.0 // indirect
+	go.opentelemetry.io/otel/trace v1.34.0 // indirect
+	golang.org/x/crypto v0.32.0 // indirect
+	golang.org/x/net v0.34.0 // indirect
+	golang.org/x/oauth2 v0.25.0 // indirect
+	golang.org/x/sync v0.10.0 // indirect
+	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/time v0.9.0 // indirect
+	google.golang.org/api v0.219.0 // indirect
+	google.golang.org/genproto v0.0.0-20250127172529-29210b9bc287 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20250127172529-29210b9bc287 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250127172529-29210b9bc287 // indirect
+	google.golang.org/protobuf v1.36.4 // indirect
+)
+
+require (
+	cloud.google.com/go/firestore v1.18.0
+	golang.org/x/sys v0.29.0 // indirect
+)
+
+replace github.com/duizendstra-com/go-dui => ./
+
+======== END FILE: ./go.mod ========
+
+
+======== FILE: ./errors/doc.go ========
+
+// go-dui/errors/doc.go
+//
+// Package errors provides a structured error type (APIError) with HTTP-like
+// status codes and optional detailed context. This makes it easier for APIs
+// to produce consistent, informative error responses.
+//
+// Usage:
+//   err := errors.New(400, "bad request")
+//   err = err.WithDetails(errors.ErrorDetail{Reason: "INVALID_INPUT", Message: "Missing 'id' parameter"})
+//
+// APIError can be compared using errors.Is, and details can be appended as needed.
+// Predefined common errors (ErrBadRequest, ErrNotFound, etc.) are also provided.
+//
+// This package is thread-safe for adding details and reading error information.
+// Its error messages and details are suitable for logging, or returning to
+// clients in JSON format.
+
+package errors
+
+======== END FILE: ./errors/doc.go ========
+
+
+======== FILE: ./errors/errors.go ========
+
+// go-dui/errors/errors.go
+//
+// Responsibilities of this file:
+//   - Define ErrorDetail and APIError types.
+//   - Provide functions and methods to create, compare, and augment errors.
+//   - Offer predefined common error values for standard HTTP status codes.
+
+package errors
+
+import (
+	"fmt"
+	"strings"
+	"sync"
+)
+
+// ErrorDetail represents additional context about the error.
+// Reason gives a short machine-friendly key for the cause,
+// and Message provides a human-readable explanation.
+type ErrorDetail struct {
+	Reason  string `json:"reason"`
+	Message string `json:"message"`
+}
+
+// APIError represents an error with a status code and an associated message.
+// It can hold multiple ErrorDetail entries for in-depth debugging info.
+// Modifications to Details are protected by a mutex.
+type APIError struct {
+	Code    int           `json:"code"`
+	Message string        `json:"message"`
+	Details []ErrorDetail `json:"details"`
+	mu      sync.Mutex
+}
+
+// New creates a new APIError. If message is empty, it defaults to "unknown error".
+// Optionally, initial details can be provided.
+func New(code int, message string, details ...ErrorDetail) *APIError {
+	if message == "" {
+		message = "unknown error"
+	}
+	return &APIError{
+		Code:    code,
+		Message: message,
+		Details: details,
+	}
+}
+
+// Error returns a formatted string with code, message, and all detail entries.
+func (e *APIError) Error() string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	detailMessages := make([]string, len(e.Details))
+	for i, detail := range e.Details {
+		detailMessages[i] = fmt.Sprintf("%s: %s", detail.Reason, detail.Message)
+	}
+
+	if len(detailMessages) > 0 {
+		return fmt.Sprintf("APIError: code=%d, message=%q, details=[%s]",
+			e.Code, e.Message, strings.Join(detailMessages, "; "))
+	}
+	return fmt.Sprintf("APIError: code=%d, message=%q", e.Code, e.Message)
+}
+
+// Is returns true if target is an APIError with the same code and message.
+func (e *APIError) Is(target error) bool {
+	apiErr, ok := target.(*APIError)
+	return ok && apiErr.Code == e.Code && apiErr.Message == e.Message
+}
+
+// WithDetails appends details to the APIError and returns it. Thread-safe.
+func (e *APIError) WithDetails(details ...ErrorDetail) *APIError {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.Details = append(e.Details, details...)
+	return e
+}
+
+// Predefined common errors.
+var (
+	ErrBadRequest   = New(400, "bad request")
+	ErrUnauthorized = New(401, "unauthorized")
+	ErrForbidden    = New(403, "forbidden")
+	ErrNotFound     = New(404, "resource not found")
+	ErrServerError  = New(500, "internal server error")
+)
+
+======== END FILE: ./errors/errors.go ========
+
+
+======== FILE: ./errors/errors_test.go ========
+
+// go-dui/errors/errors_test.go
+//
+// This test verifies the core functionality of the APIError type and its methods.
+// It checks creating new errors, adding details, comparing errors with Is(),
+// and ensuring that messages are formatted correctly.
+
+package errors
+
+import (
+	"errors"
+	"testing"
+)
+
+func TestNew(t *testing.T) {
+	err := New(400, "bad request")
+	if err.Code != 400 {
+		t.Errorf("expected code=400, got %d", err.Code)
+	}
+	if err.Message != "bad request" {
+		t.Errorf("expected message='bad request', got %q", err.Message)
+	}
+	if len(err.Details) != 0 {
+		t.Errorf("expected no details, got %d", len(err.Details))
+	}
+}
+
+func TestNewFallbackMessage(t *testing.T) {
+	err := New(500, "")
+	if err.Message != "unknown error" {
+		t.Errorf("expected fallback message='unknown error', got %q", err.Message)
+	}
+}
+
+func TestWithDetails(t *testing.T) {
+	err := New(404, "not found")
+	err.WithDetails(ErrorDetail{Reason: "DB_MISS", Message: "No record in database"})
+	if len(err.Details) != 1 {
+		t.Fatalf("expected 1 detail, got %d", len(err.Details))
+	}
+	if err.Details[0].Reason != "DB_MISS" {
+		t.Errorf("expected reason='DB_MISS', got %q", err.Details[0].Reason)
+	}
+	if err.Details[0].Message != "No record in database" {
+		t.Errorf("expected message='No record in database', got %q", err.Details[0].Message)
+	}
+}
+
+func TestErrorFormatting(t *testing.T) {
+	err := New(500, "internal error")
+	msg := err.Error()
+	if msg != `APIError: code=500, message="internal error"` {
+		t.Errorf("unexpected error format: %q", msg)
+	}
+
+	err.WithDetails(ErrorDetail{Reason: "CONFIG", Message: "missing config"})
+	msg = err.Error()
+	if msg != `APIError: code=500, message="internal error", details=[CONFIG: missing config]` {
+		t.Errorf("unexpected error format with details: %q", msg)
+	}
+}
+
+func TestIs(t *testing.T) {
+	errA := New(400, "bad request")
+	errB := New(400, "bad request")
+	errC := New(400, "different message")
+	errD := New(500, "bad request")
+
+	if !errors.Is(errA, errB) {
+		t.Error("errA should match errB (same code and message)")
+	}
+	if errors.Is(errA, errC) {
+		t.Error("errA should not match errC (different messages)")
+	}
+	if errors.Is(errA, errD) {
+		t.Error("errA should not match errD (different codes)")
+	}
+
+	// Non-APIError should not match
+	if errors.Is(errA, errors.New("some other error")) {
+		t.Error("APIError should not match a non-APIError")
+	}
+}
+
+func TestPredefinedErrors(t *testing.T) {
+	if ErrBadRequest.Code != 400 || ErrBadRequest.Message != "bad request" {
+		t.Errorf("ErrBadRequest not as expected: code=%d msg=%q", ErrBadRequest.Code, ErrBadRequest.Message)
+	}
+	if ErrServerError.Code != 500 || ErrServerError.Message != "internal server error" {
+		t.Errorf("ErrServerError not as expected: code=%d msg=%q", ErrServerError.Code, ErrServerError.Message)
+	}
+}
+
+======== END FILE: ./errors/errors_test.go ========
+
+
+======== FILE: ./errors/example_test.go ========
+
+// go-dui/errors/example_test.go
+//
+// This example demonstrates how to create and use an APIError with details.
+// It does not produce output, as requested.
+//
+// In real usage, you might return this error from an API handler
+// or convert it into an HTTP response.
+
+package errors
+
+import "fmt"
+
+func ExampleAPIError() {
+	// Create a new error with a code and message
+	err := New(401, "unauthorized")
+
+	// Add details to provide more context
+	err = err.WithDetails(ErrorDetail{Reason: "AUTH_FAILED", Message: "Invalid token"})
+
+	// In a real scenario, you might log this error, return it in an HTTP response,
+	// or wrap it with additional context.
+	_ = fmt.Sprintf("Handle error: %v", err)
+
+	// No output is produced by design.
+}
+
+======== END FILE: ./errors/example_test.go ========
+
+
+======== FILE: ./cache/doc.go ========
+
+// Package cache provides a key-value caching abstraction for storing and
+// retrieving data at runtime. It defines a Cache interface representing
+// common cache operations and includes a simple, in-memory implementation.
+//
+// Common Use Cases:
+//   - Caching frequently accessed values to improve performance
+//   - Storing lightweight, ephemeral data that does not need persistence
+//
+// Key Features:
+//   - Thread-safe operations for concurrent access
+//   - Bulk set and retrieval methods for convenience
+//   - A flush method to clear the entire cache at once
+//
+// This package returns a concrete in-memory cache type, and an interface
+// that describes its usage. Consumers can rely on the Cache interface to
+// abstract away the implementation details if desired. Additional caching
+// backends (e.g. persistent or distributed) could be introduced later by
+// providing new implementations that satisfy the Cache interface.
+package cache
+
+======== END FILE: ./cache/doc.go ========
+
+
+======== FILE: ./cache/inmem_test.go ========
+
+package cache
+
+import "testing"
+
+func TestInMemoryCache(t *testing.T) {
+	cache := NewInMemoryCache()
+
+	// Test Set and Get
+	cache.Set("foo", "bar")
+	val, ok := cache.Get("foo")
+	if !ok || val != "bar" {
+		t.Fatalf("expected 'bar', got %v", val)
+	}
+
+	// Test SetAll
+	cache.SetAll(map[string]interface{}{
+		"a": 1,
+		"b": 2,
+	})
+	if val, ok := cache.Get("a"); !ok || val != 1 {
+		t.Errorf("expected 1 for 'a', got %v", val)
+	}
+	if val, ok := cache.Get("b"); !ok || val != 2 {
+		t.Errorf("expected 2 for 'b', got %v", val)
+	}
+
+	// Test GetAll
+	all := cache.GetAll()
+	if len(all) != 3 {
+		t.Errorf("expected 3 items, got %d", len(all))
+	}
+	if all["foo"] != "bar" || all["a"] != 1 || all["b"] != 2 {
+		t.Errorf("GetAll returned unexpected data: %v", all)
+	}
+
+	// Test Flush
+	cache.Flush()
+	if _, ok := cache.Get("foo"); ok {
+		t.Error("expected no values after Flush, but got one for 'foo'")
+	}
+	if _, ok := cache.Get("a"); ok {
+		t.Error("expected no values after Flush, but got one for 'a'")
+	}
+}
+
+======== END FILE: ./cache/inmem_test.go ========
+
+
+======== FILE: ./cache/cache.go ========
+
+package cache
+
+// Cache defines a key-value cache interface.
+//
+// Implementations of Cache should handle concurrency safely if they expect
+// concurrent access, and should document any specific behaviors or limitations
+// regarding data retention, expiration, or storage size.
+type Cache interface {
+	// Set associates a value with the given key, overwriting any existing value.
+	Set(key string, value interface{})
+
+	// Get retrieves the value associated with the given key.
+	// If the key exists, it returns (value, true).
+	// Otherwise, it returns (nil, false).
+	Get(key string) (interface{}, bool)
+
+	// SetAll stores multiple key-value pairs at once. Existing keys are overwritten.
+	SetAll(values map[string]interface{})
+
+	// GetAll returns a snapshot of all current key-value pairs in the cache.
+	// The returned map is a copy, so modifications to it do not affect the
+	// underlying cache. Implementations should ensure this operation is safe
+	// to call concurrently with others.
+	GetAll() map[string]interface{}
+
+	// Flush removes all entries from the cache, leaving it empty.
+	Flush()
+}
+
+======== END FILE: ./cache/cache.go ========
+
+
+======== FILE: ./cache/inmem.go ========
+
+package cache
+
+import "sync"
+
+// InMemoryCache provides an in-memory implementation of the Cache interface.
+// It stores data in a simple map protected by a mutex, ensuring safe concurrent
+// access. It does not support expiration, persistence, or advanced features.
+//
+// This type is suitable for scenarios where cached data is small, does not
+// need to persist between application restarts, and is frequently updated.
+//
+// Example:
+//
+//	c := NewInMemoryCache()
+//	c.Set("foo", "bar")
+//	if val, ok := c.Get("foo"); ok {
+//	    fmt.Println(val) // prints "bar"
+//	}
+type InMemoryCache struct {
+	mu   sync.Mutex
+	data map[string]interface{}
+}
+
+// NewInMemoryCache returns a new, empty InMemoryCache instance.
+func NewInMemoryCache() *InMemoryCache {
+	return &InMemoryCache{
+		data: make(map[string]interface{}),
+	}
+}
+
+// Set associates a value with the given key, overwriting any existing value.
+func (c *InMemoryCache) Set(key string, value interface{}) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.data[key] = value
+}
+
+// Get retrieves the value associated with the given key.
+// If the key exists, it returns (value, true). Otherwise, (nil, false).
+func (c *InMemoryCache) Get(key string) (interface{}, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	val, ok := c.data[key]
+	return val, ok
+}
+
+// SetAll stores multiple key-value pairs at once. Existing keys are overwritten.
+func (c *InMemoryCache) SetAll(values map[string]interface{}) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for k, v := range values {
+		c.data[k] = v
+	}
+}
+
+// GetAll returns a snapshot of all current key-value pairs in the cache.
+// The returned map is a copy. Modifying it does not change the underlying cache.
+func (c *InMemoryCache) GetAll() map[string]interface{} {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	copyMap := make(map[string]interface{}, len(c.data))
+	for k, v := range c.data {
+		copyMap[k] = v
+	}
+	return copyMap
+}
+
+// Flush removes all entries from the cache, leaving it empty.
+func (c *InMemoryCache) Flush() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.data = make(map[string]interface{})
+}
+
+======== END FILE: ./cache/inmem.go ========
+
+
+======== FILE: ./cache/example_test.go ========
+
+package cache
+
+import (
+	"fmt"
+)
+
+// ExampleInMemoryCache demonstrates basic usage of the InMemoryCache.
+//
+// To view this example, run:
+//
+//	go doc myapp/cache
+//
+// To run this example as a test, run:
+//
+//	go test myapp/cache -v
+func ExampleInMemoryCache() {
+	// Create a new in-memory cache
+	c := NewInMemoryCache()
+
+	// Set a single key-value pair
+	c.Set("username", "alice")
+
+	// Retrieve the value
+	val, ok := c.Get("username")
+	if ok {
+		fmt.Println("username:", val)
+	}
+
+	// Set multiple key-value pairs at once
+	c.SetAll(map[string]interface{}{
+		"count":  42,
+		"status": "active",
+	})
+
+	// Print all values currently in the cache
+	all := c.GetAll()
+	fmt.Println("All values:", all)
+
+	// Flush the cache
+	c.Flush()
+	fmt.Println("All values after Flush:", c.GetAll())
+
+	// Output:
+	// username: alice
+	// All values: map[count:42 status:active username:alice]
+	// All values after Flush: map[]
+}
+
+======== END FILE: ./cache/example_test.go ========
+
+
+======== FILE: ./logging/cloudlogging/middleware.go ========
+
+// go-dui/logging/cloudlogging/middleware.go
+//
+// Responsibilities of this file:
+//   - Define an HTTP middleware (WithCloudTraceContext) that extracts X-Cloud-Trace-Context
+//     header data and attaches trace info to the request context.
+//
+// If the GCP project ID cannot be determined, it defaults to "unknown-project".
+// If the X-Cloud-Trace-Context header is missing or invalid, the trace is set to
+// a fallback ("projects/unknown-project/traces/") without a valid trace ID.
+
+package cloudlogging
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"os"
+	"regexp"
+
+	"cloud.google.com/go/compute/metadata"
+)
+
+type traceKey struct{}
+type spanIDKey struct{}
+type traceSampledKey struct{}
+
+var reCloudTraceContext = regexp.MustCompile(
+	`^([a-f\d]+)(?:/([a-f\d]+))?;o=(\d+)$`,
+)
+
+func deconstructXCloudTraceContext(s string) (traceID, spanID string, traceSampled bool) {
+	matches := reCloudTraceContext.FindStringSubmatch(s)
+	if len(matches) == 4 {
+		traceID = matches[1]
+		spanID = matches[2] // may be empty
+		traceSampled = matches[3] == "1"
+	}
+	return
+}
+
+// WithCloudTraceContext extracts trace info from the X-Cloud-Trace-Context
+// header and attaches it to the request context.
+func WithCloudTraceContext(h http.Handler) http.Handler {
+	projectID, err := metadata.ProjectIDWithContext(context.Background())
+	if err != nil {
+		fmt.Printf("Error retrieving project ID from metadata server: %v\n", err)
+		// Try environment variable fallback
+		if envProjectID := os.Getenv("GOOGLE_CLOUD_PROJECT"); envProjectID != "" {
+			projectID = envProjectID
+			fmt.Printf("Using project ID from GOOGLE_CLOUD_PROJECT: %s\n", projectID)
+		} else {
+			projectID = "unknown-project"
+			fmt.Printf("No project ID found in metadata or environment. Using fallback: %s\n", projectID)
+		}
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		traceHeader := r.Header.Get("X-Cloud-Trace-Context")
+		traceID, spanID, traceSampled := deconstructXCloudTraceContext(traceHeader)
+		trace := fmt.Sprintf("projects/%s/traces/%s", projectID, traceID)
+
+		ctx := r.Context()
+		ctx = context.WithValue(ctx, traceKey{}, trace)
+		ctx = context.WithValue(ctx, spanIDKey{}, spanID)
+		ctx = context.WithValue(ctx, traceSampledKey{}, traceSampled)
+
+		h.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+======== END FILE: ./logging/cloudlogging/middleware.go ========
+
+
+======== FILE: ./logging/cloudlogging/middleware_test.go ========
+
+package cloudlogging
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
+
+func TestWithCloudTraceContext(t *testing.T) {
+	testHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		trace, _ := r.Context().Value(traceKey{}).(string)
+		spanID, _ := r.Context().Value(spanIDKey{}).(string)
+		traceSampled, _ := r.Context().Value(traceSampledKey{}).(bool)
+
+		if trace == "" {
+			t.Error("expected trace to be set, got empty string")
+		}
+		if spanID != "123" {
+			t.Errorf("expected spanID = 123, got %q", spanID)
+		}
+		if !traceSampled {
+			t.Error("expected traceSampled = true, got false")
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req := httptest.NewRequest("GET", "http://example.com/", nil)
+	req.Header.Set("X-Cloud-Trace-Context", "abcdef1234567890abcdef1234567890/123;o=1")
+
+	rr := httptest.NewRecorder()
+	handler := WithCloudTraceContext(testHandler)
+	handler.ServeHTTP(rr, req)
+
+	if status := rr.Code; status != http.StatusOK {
+		t.Errorf("handler returned non-OK status: got %v want %v", status, http.StatusOK)
+	}
+}
+
+func TestWithCloudTraceContext_NoHeader(t *testing.T) {
+	testHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		trace, _ := r.Context().Value(traceKey{}).(string)
+		if trace == "" {
+			t.Error("expected a default trace value, got empty string")
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req := httptest.NewRequest("GET", "http://example.com/", nil)
+	rr := httptest.NewRecorder()
+
+	handler := WithCloudTraceContext(testHandler)
+	handler.ServeHTTP(rr, req)
+
+	if status := rr.Code; status != http.StatusOK {
+		t.Errorf("handler returned non-OK status: got %v want %v", status, http.StatusOK)
+	}
+}
+
+// Test case for a malformed X-Cloud-Trace-Context header
+func TestWithCloudTraceContext_MalformedHeader(t *testing.T) {
+	testHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		trace, _ := r.Context().Value(traceKey{}).(string)
+		if trace == "" {
+			t.Error("expected a default trace value, got empty string")
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req := httptest.NewRequest("GET", "http://example.com/", nil)
+	req.Header.Set("X-Cloud-Trace-Context", "not-a-valid-trace-header")
+
+	rr := httptest.NewRecorder()
+	handler := WithCloudTraceContext(testHandler)
+	handler.ServeHTTP(rr, req)
+
+	if status := rr.Code; status != http.StatusOK {
+		t.Errorf("handler returned non-OK status for malformed header: got %v want %v", status, http.StatusOK)
+	}
+}
+
+======== END FILE: ./logging/cloudlogging/middleware_test.go ========
+
+
+======== FILE: ./logging/cloudlogging/doc.go ========
+
+// go-dui/logging/cloudlogging/doc.go
+//
+// Package cloudlogging provides middleware and handlers to integrate Go's
+// standard HTTP handling and logging with Google Cloud Logging and Cloud Trace.
+//
+// The WithCloudTraceContext middleware inspects the X-Cloud-Trace-Context
+// header from incoming HTTP requests, extracting trace and span information.
+// This trace context is stored in the request's context so that subsequent
+// handlers and logging calls can produce logs correlated with a specific Cloud
+// Trace span.
+//
+// The CloudLoggingHandler is a custom slog.Handler that formats logs in a manner
+// compatible with Google Cloud Logging. It sets appropriate severity fields,
+// injects trace and span data if available, and can optionally include source
+// location details for error-level and above logs.
+//
+// Typical usage:
+//   http.Handle("/", WithCloudTraceContext(yourHandler))
+//   logger := slog.New(NewCloudLoggingHandler("my-service"))
+//   slog.SetDefault(logger)
+//
+// When logs are produced (e.g., slog.InfoContext), the handler references the
+// trace information in the request context to annotate logs with trace fields,
+// enabling better correlation and debugging in Cloud Logging and Cloud Trace.
+
+package cloudlogging
+
+======== END FILE: ./logging/cloudlogging/doc.go ========
+
+
+======== FILE: ./logging/cloudlogging/handler.go ========
+
+// go-dui/logging/cloudlogging/handler.go
+//
+// Responsibilities of this file:
+//   - Define a CloudLoggingHandler that translates slog Levels to Cloud Logging severities.
+//   - Integrate trace and span info from the request context into logs.
+//   - Optionally add source location details for error-level logs.
+//
+// Use this handler in conjunction with the WithCloudTraceContext middleware.
+
+package cloudlogging
+
+import (
+	"context"
+	"log/slog"
+	"os"
+	"runtime"
+)
+
+type CloudLoggingHandler struct {
+	handler slog.Handler
+}
+
+func NewCloudLoggingHandler(component string) *CloudLoggingHandler {
+	var levelVar slog.LevelVar
+
+	envLogLevel := os.Getenv("LOG_LEVEL")
+	switch envLogLevel {
+	case "DEBUG":
+		levelVar.Set(slog.LevelDebug)
+	case "INFO":
+		levelVar.Set(slog.LevelInfo)
+	case "WARN", "WARNING":
+		levelVar.Set(slog.LevelWarn)
+	case "ERROR":
+		levelVar.Set(slog.LevelError)
+	default:
+		levelVar.Set(slog.LevelInfo)
+	}
+
+	baseHandler := slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+		AddSource: false,
+		Level:     &levelVar,
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			if a.Key == slog.MessageKey {
+				a.Key = "message"
+			} else if a.Key == slog.SourceKey {
+				a.Key = "logging.googleapis.com/sourceLocation"
+			} else if a.Key == slog.LevelKey {
+				a.Key = "severity"
+				level := a.Value.Any().(slog.Level)
+				switch level {
+				case slog.LevelDebug:
+					a.Value = slog.StringValue("DEBUG")
+				case slog.LevelInfo:
+					a.Value = slog.StringValue("INFO")
+				case LevelNotice:
+					a.Value = slog.StringValue("NOTICE")
+				case slog.LevelWarn:
+					a.Value = slog.StringValue("WARNING")
+				case slog.LevelError:
+					a.Value = slog.StringValue("ERROR")
+				case LevelCritical:
+					a.Value = slog.StringValue("CRITICAL")
+				case LevelAlert:
+					a.Value = slog.StringValue("ALERT")
+				case LevelEmergency:
+					a.Value = slog.StringValue("EMERGENCY")
+				default:
+					a.Value = slog.StringValue("DEFAULT")
+				}
+			}
+			return a
+		},
+	})
+
+	handlerWithAttrs := baseHandler.WithAttrs([]slog.Attr{
+		slog.String("component", component),
+	})
+
+	return &CloudLoggingHandler{handler: handlerWithAttrs}
+}
+
+func (h *CloudLoggingHandler) Handle(ctx context.Context, rec slog.Record) error {
+	rec = rec.Clone()
+
+	trace, _ := ctx.Value(traceKey{}).(string)
+	if trace == "" {
+		trace = "projects/unknown-project/traces/unknown-trace"
+	}
+	rec.Add("logging.googleapis.com/trace", slog.StringValue(trace))
+
+	if spanID, ok := ctx.Value(spanIDKey{}).(string); ok {
+		rec.Add("logging.googleapis.com/spanId", slog.StringValue(spanID))
+	}
+
+	if traceSampled, ok := ctx.Value(traceSampledKey{}).(bool); ok {
+		rec.Add("logging.googleapis.com/trace_sampled", slog.BoolValue(traceSampled))
+	} else {
+		rec.Add("logging.googleapis.com/trace_sampled", slog.BoolValue(false))
+	}
+
+	if rec.Level >= slog.LevelError {
+		pc, file, line, ok := runtime.Caller(3)
+		if ok {
+			funcName := runtime.FuncForPC(pc).Name()
+			rec.Add("logging.googleapis.com/sourceLocation", slog.GroupValue(
+				slog.String("file", file),
+				slog.Int("line", line),
+				slog.String("function", funcName),
+			))
+		}
+	}
+
+	return h.handler.Handle(ctx, rec)
+}
+
+func (h *CloudLoggingHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &CloudLoggingHandler{handler: h.handler.WithAttrs(attrs)}
+}
+
+func (h *CloudLoggingHandler) WithGroup(name string) slog.Handler {
+	return &CloudLoggingHandler{handler: h.handler.WithGroup(name)}
+}
+
+func (h *CloudLoggingHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return h.handler.Enabled(ctx, level)
+}
+
+======== END FILE: ./logging/cloudlogging/handler.go ========
+
+
+======== FILE: ./logging/cloudlogging/handler_test.go ========
+
+// go-dui/pkg/logging/cloudlogging/handler.go
+//
+// Package cloudlogging provides a custom slog Handler implementation that
+// formats logs in a manner compatible with Google Cloud Logging. This includes
+// setting appropriate severity levels, injecting trace data, and optionally
+// providing source location information for error-level logs and above.
+//
+// References:
+//   - Google Cloud Logging Structured Logging:
+//     https://cloud.google.com/logging/docs/structured-logging
+//
+// Responsibilities of this file:
+//   - Define a CloudLoggingHandler that adheres to slog.Handler.
+//   - Translate slog Levels to Google Cloud Logging "severity" fields.
+//   - Integrate trace and span information from the request context so logs
+//     correlate with Cloud Trace data.
+//   - Optionally add source code location (file, line, function) for error-level
+//     logs, aiding debugging and troubleshooting.
+//
+// Dependencies:
+//   - "log/slog": Provides the standard logging interface and record types.
+//   - "os": Access to environment variables (e.g., LOG_LEVEL).
+//   - "runtime": For retrieving caller information at error levels.
+//
+// This handler should be used in conjunction with the middleware defined in
+// middleware.go, which injects trace context into the request's context using
+// typed keys. Ensure that the handler references these same typed keys to
+// correctly retrieve trace information.
+
+package cloudlogging
+
+import (
+	"reflect"
+	"testing"
+)
+
+func TestNewCloudLoggingHandler(t *testing.T) {
+	type args struct {
+		component string
+	}
+	tests := []struct {
+		name string
+		args args
+		want *CloudLoggingHandler
+	}{
+		// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := NewCloudLoggingHandler(tt.args.component); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("NewCloudLoggingHandler() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+======== END FILE: ./logging/cloudlogging/handler_test.go ========
+
+
+======== FILE: ./logging/cloudlogging/levels.go ========
+
+// go-dui/pkg/logging/cloudlogging/levels.go
+//
+// Package cloudlogging provides integration between Go's slog package and
+// Google Cloud Logging's severity levels. This file defines custom log levels
+// that align with Google Cloud Logging severities, as well as a utility
+// function to map string representations of log levels to these custom
+// slog.Level values.
+//
+// Dependencies:
+//   - log/slog: Provides the base logging level types and constants.
+//   - This package is intended to be used by a custom slog handler that
+//     formats logs for consumption in Google Cloud Logging, ensuring the
+//     severity fields map correctly.
+//
+// Responsibilities of this file:
+//   - Define custom slog levels for notice, critical, alert, and emergency
+//     to align with Google Cloud Logging severity conventions.
+//   - Provide a conversion function from a string (e.g., from an environment
+//     variable or configuration) to the corresponding slog.Level.
+//   - Serve as a unified reference for severity level mappings, ensuring that
+//     the rest of the logging codebase relies on these centralized definitions
+//     for consistency and maintainability.
+
+package cloudlogging
+
+import "log/slog"
+
+// Custom log levels for Cloud Logging.
+// These constants are offsets from slog's built-in levels (e.g., slog.LevelInfo, slog.LevelError).
+// They exist because Google Cloud Logging defines severities such as "NOTICE", "CRITICAL",
+// "ALERT", and "EMERGENCY", which are not part of slog's built-in levels.
+// By defining these custom levels, we can seamlessly integrate Cloud Logging severities
+// into slog-based logging.
+const (
+	// LevelNotice defines a log level that sits just above INFO and corresponds
+	// to the "NOTICE" severity in Cloud Logging. This may be used for normal
+	// but significant events that do not yet warrant a WARNING.
+	LevelNotice = slog.LevelInfo + 1
+
+	// LevelCritical defines a log level above ERROR that corresponds to the
+	// "CRITICAL" severity in Cloud Logging. This may be used for critical issues
+	// that require immediate attention.
+	LevelCritical = slog.LevelError + 1
+
+	// LevelAlert defines a log level above CRITICAL corresponding to the "ALERT"
+	// severity in Cloud Logging. This indicates a condition that must be dealt
+	// with immediately. Alerts should trigger immediate action.
+	LevelAlert = slog.LevelError + 2
+
+	// LevelEmergency defines a log level above ALERT corresponding to the
+	// "EMERGENCY" severity in Cloud Logging. This indicates a system-wide
+	// emergency, and human intervention is almost certainly required.
+	LevelEmergency = slog.LevelError + 3
+)
+
+// StringToLevel takes a string representation of a log severity (e.g., from
+// user input, environment variables, or configuration) and returns the
+// corresponding slog.Level. This includes both standard slog levels and
+// the custom Cloud Logging levels defined above.
+//
+// The function ensures that external configurations can easily match a string
+// severity like "NOTICE" or "CRITICAL" to the appropriate slog level, allowing
+// flexible configuration of log thresholds or severity mappings.
+//
+// If the provided string does not match any known severity, it defaults to
+// slog.LevelInfo for safety. This default ensures that logs are produced with
+// at least a known level, rather than failing silently.
+func StringToLevel(level string) slog.Level {
+	switch level {
+	case "DEBUG":
+		return slog.LevelDebug
+	case "INFO":
+		return slog.LevelInfo
+	case "NOTICE":
+		return LevelNotice
+	case "WARNING":
+		return slog.LevelWarn
+	case "ERROR":
+		return slog.LevelError
+	case "CRITICAL":
+		return LevelCritical
+	case "ALERT":
+		return LevelAlert
+	case "EMERGENCY":
+		return LevelEmergency
+	default:
+		// Fallback to INFO if the level is unknown.
+		return slog.LevelInfo
+	}
+}
+
+======== END FILE: ./logging/cloudlogging/levels.go ========
+
+
+======== FILE: ./logging/cloudlogging/levels_test.go ========
+
+// go-dui/pkg/logging/cloudlogging/levels_test.go
+
+package cloudlogging
+
+import (
+	"log/slog"
+	"testing"
+)
+
+func TestStringToLevel(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected slog.Level
+	}{
+		{"DEBUG", slog.LevelDebug},
+		{"INFO", slog.LevelInfo},
+		{"NOTICE", LevelNotice},
+		{"WARNING", slog.LevelWarn},
+		{"ERROR", slog.LevelError},
+		{"CRITICAL", LevelCritical},
+		{"ALERT", LevelAlert},
+		{"EMERGENCY", LevelEmergency},
+		{"UNKNOWN", slog.LevelInfo}, // Default
+	}
+
+	for _, tt := range tests {
+		got := StringToLevel(tt.input)
+		if got != tt.expected {
+			t.Errorf("StringToLevel(%q) = %d; want %d", tt.input, got, tt.expected)
+		}
+	}
+}
+
+======== END FILE: ./logging/cloudlogging/levels_test.go ========
+
+
+======== FILE: ./logging/cloudlogging/example_test.go ========
+
+// go-dui/pkg/logging/cloudlogging/example_test.go
+//
+// This file provides a runnable example demonstrating how to use the
+// CloudLoggingHandler and WithCloudTraceContext middleware together.
+
+package cloudlogging
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+)
+
+func ExampleNewCloudLoggingHandler() {
+	// Create a CloudLoggingHandler that outputs JSON logs recognized by Cloud Logging.
+	handler := NewCloudLoggingHandler("example-component")
+
+	// Create a logger using our handler.
+	logger := slog.New(handler)
+
+	// Wrap a simple HTTP handler with the WithCloudTraceContext middleware.
+	// In a real application, this would be attached to your HTTP server.
+	wrappedHandler := WithCloudTraceContext(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Use the logger to write logs. This will include trace info if present.
+		logger.InfoContext(r.Context(), "Received request", "path", r.URL.Path)
+
+		if r.URL.Path != "/expected-path" {
+			// If the path doesn't match, log and return an error.
+			logger.ErrorContext(r.Context(), "Unexpected path accessed", "path", r.URL.Path)
+			http.Error(w, "Not Found", http.StatusNotFound)
+			return
+		}
+
+		// Respond successfully and log the success.
+		fmt.Fprintln(w, "Hello, Cloud Logging with Trace!")
+		logger.InfoContext(r.Context(), "Request handled successfully")
+	}))
+
+	// Create a simulated request with trace headers.
+	// Typically, these headers are set by Google Cloud's load balancer or App Engine.
+	testReq := httptest.NewRequest("GET", "http://example.com/expected-path", nil)
+	testReq.Header.Set("X-Cloud-Trace-Context", "abcdef1234567890abcdef1234567890/123;o=1")
+
+	// Serve the request using httptest.
+	rr := httptest.NewRecorder()
+	wrappedHandler.ServeHTTP(rr, testReq)
+
+	// Inspect the response.
+	responseBody := rr.Body.String()
+	fmt.Println("Response body:", responseBody)
+
+	// Log outside a request context to show how logs differ without trace info.
+	logger.InfoContext(context.Background(), "Logging outside of a request context")
+
+	// Note: The actual logs will be printed to stderr in JSON format.
+	// The trace info will be included in the logs related to the handled request.
+}
+
+======== END FILE: ./logging/cloudlogging/example_test.go ========
+
+
+======== FILE: ./authentication/doc.go ========
+
+// Package authentication provides functionality for handling authentication tokens.
+// It includes:
+//   - Token: A simple type representing a token and its expiration time.
+//   - TokenManager: A component for retrieving and caching tokens from external sources.
+//
+// Typical usage:
+//
+//	tm := NewTokenManager(cache.NewInMemoryCache())
+//	tm.RegisterFetcher("my-service", func() (string, time.Time, error) {
+//	  // Fetch a fresh token and return it along with its expiry.
+//	  return "fresh-token", time.Now().Add(1*time.Hour), nil
+//	})
+//
+//	token, err := tm.GetToken("my-service")
+//	if err != nil {
+//	  log.Fatalf("failed to get token: %v", err)
+//	}
+//	fmt.Println("Token:", token)
+//
+// # Error Handling
+//
+// If no fetcher is registered for a given key or if the fetcher fails, GetToken returns an error.
+// This allows you to gracefully handle missing or invalid tokens at runtime.
+//
+// # Testing
+//
+// This package does not specify how fetchers should obtain tokens, allowing you to integrate
+// your own logic or use provided integrations like EasyflorTokenFetcher. For testing, you can use
+// a mocking approach by depending on the TokenManagerInterface or by overriding fetchers with
+// your own test logic.
+package authentication
+
+======== END FILE: ./authentication/doc.go ========
+
+
+======== FILE: ./authentication/token_test.go ========
+
+package authentication
+
+import (
+	"testing"
+	"time"
+)
+
+func TestTokenIsExpired(t *testing.T) {
+	fixedTime := time.Unix(10000, 0) // arbitrary stable reference time
+
+	cases := []struct {
+		name     string
+		token    Token
+		expected bool
+	}{
+		{
+			name: "Not expired if expiry is in the future",
+			token: Token{
+				Value:   "valid-token",
+				Expires: fixedTime.Add(time.Minute),
+			},
+			expected: false,
+		},
+		{
+			name: "Expired if expiry is in the past",
+			token: Token{
+				Value:   "old-token",
+				Expires: fixedTime.Add(-time.Minute),
+			},
+			expected: true,
+		},
+		{
+			name: "Not expired if expiry equals current time",
+			token: Token{
+				Value:   "just-expired",
+				Expires: fixedTime,
+			},
+			expected: false,
+		},
+	}
+
+	originalNow := nowFunc
+	nowFunc = func() time.Time { return fixedTime }
+	defer func() { nowFunc = originalNow }()
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := c.token.IsExpired()
+			if got != c.expected {
+				t.Errorf("expected %v, got %v for token %q", c.expected, got, c.token.Value)
+			}
+		})
+	}
+}
+
+======== END FILE: ./authentication/token_test.go ========
+
+
+======== FILE: ./authentication/tokenmanager_test.go ========
+
+package authentication
+
+import (
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/duizendstra-com/go-dui/cache"
+)
+
+func TestTokenManager(t *testing.T) {
+	// Use an in-memory cache for simplicity
+	c := cache.NewInMemoryCache()
+	tm := NewTokenManager(c)
+
+	// 1) Register a fetcher returning a static token
+	tm.RegisterFetcher("api-service", func() (string, time.Time, error) {
+		return "fetched-token", time.Now().Add(time.Minute), nil
+	})
+
+	// 2) Initially, no token => fetcher is called
+	token, err := tm.GetToken("api-service")
+	if err != nil {
+		t.Fatalf("unexpected error fetching token: %v", err)
+	}
+	if token != "fetched-token" {
+		t.Errorf("expected 'fetched-token', got %q", token)
+	}
+
+	// 3) Second call => cached token
+	token2, err := tm.GetToken("api-service")
+	if err != nil {
+		t.Fatalf("unexpected error second time: %v", err)
+	}
+	if token2 != "fetched-token" {
+		t.Errorf("expected 'fetched-token', got %q", token2)
+	}
+
+	// 4) Manually set a token that expires now => force re-fetch
+	tm.SetToken("api-service", "manual-token", time.Now())
+	time.Sleep(10 * time.Millisecond) // ensure it is expired
+
+	token3, err := tm.GetToken("api-service")
+	if err != nil {
+		t.Fatalf("unexpected error after expired token: %v", err)
+	}
+	if token3 != "fetched-token" {
+		t.Errorf("expected 'fetched-token' after re-fetch, got %q", token3)
+	}
+
+	// 5) Unknown service => error
+	_, err = tm.GetToken("unknown-service")
+	if err == nil {
+		t.Fatal("expected error for unknown-service")
+	}
+
+	// 6) Failing fetcher => error
+	tm.RegisterFetcher("failing-service", func() (string, time.Time, error) {
+		return "", time.Time{}, errors.New("fetch failed")
+	})
+
+	_, err = tm.GetToken("failing-service")
+	if err == nil || err.Error() != "failed to fetch token for key failing-service: fetch failed" {
+		t.Errorf("expected 'fetch failed' error, got %v", err)
+	}
+}
+
+======== END FILE: ./authentication/tokenmanager_test.go ========
+
+
+======== FILE: ./authentication/tokenmanager.go ========
+
+package authentication
+
+import (
+	"fmt"
+	"sync"
+	"time"
+
+	"github.com/duizendstra-com/go-dui/cache"
+)
+
+// TokenFetcher is a function returning a new token and its expiry.
+type TokenFetcher func() (string, time.Time, error)
+
+// TokenManagerInterface defines the behavior for managing tokens.
+type TokenManagerInterface interface {
+	RegisterFetcher(key string, fetcher TokenFetcher)
+	SetToken(key, token string, expiry time.Time)
+	GetToken(key string) (string, error)
+}
+
+// cachedToken is stored in the cache.
+type cachedToken struct {
+	token  string
+	expiry time.Time
+}
+
+// TokenManager manages tokens stored in a cache, refreshing them via fetchers when needed.
+type TokenManager struct {
+	mu       sync.Mutex
+	c        cache.Cache
+	fetchers map[string]TokenFetcher
+}
+
+// NewTokenManager returns a new TokenManager instance, storing tokens in the provided cache.
+func NewTokenManager(c cache.Cache) *TokenManager {
+	return &TokenManager{
+		c:        c,
+		fetchers: make(map[string]TokenFetcher),
+	}
+}
+
+// RegisterFetcher associates a TokenFetcher with a given key. When GetToken sees a missing
+// or expired token, it calls this fetcher to obtain a fresh one.
+func (tm *TokenManager) RegisterFetcher(key string, fetcher TokenFetcher) {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	tm.fetchers[key] = fetcher
+}
+
+// SetToken manually stores a token and its expiry in the cache, bypassing the fetcher.
+func (tm *TokenManager) SetToken(key, token string, expiry time.Time) {
+	tm.c.Set(key, &cachedToken{
+		token:  token,
+		expiry: expiry,
+	})
+}
+
+// GetToken retrieves a token for the key. If the token is present and not expired,
+// it returns it. Otherwise, it fetches a new token from the registered TokenFetcher.
+func (tm *TokenManager) GetToken(key string) (string, error) {
+	val, ok := tm.c.Get(key)
+	if ok {
+		if ct, valid := val.(*cachedToken); valid && time.Now().Before(ct.expiry) {
+			return ct.token, nil
+		}
+	}
+
+	tm.mu.Lock()
+	fetcher, hasFetcher := tm.fetchers[key]
+	tm.mu.Unlock()
+
+	if !hasFetcher {
+		return "", fmt.Errorf("no fetcher registered for key: %s", key)
+	}
+
+	token, expiry, err := fetcher()
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch token for key %s: %w", key, err)
+	}
+
+	tm.SetToken(key, token, expiry)
+	return token, nil
+}
+
+======== END FILE: ./authentication/tokenmanager.go ========
+
+
+======== FILE: ./authentication/token.go ========
+
+package authentication
+
+import "time"
+
+// nowFunc returns the current time. In tests, we can replace it for stable results.
+var nowFunc = time.Now
+
+// Token represents a generic token with associated metadata, including its expiry time.
+// IsExpired checks whether the token has passed its expiration time.
+type Token struct {
+	Value   string
+	Expires time.Time
+}
+
+// IsExpired returns true if the current time is after the token's Expires time.
+func (t Token) IsExpired() bool {
+	return nowFunc().After(t.Expires)
+}
+
+======== END FILE: ./authentication/token.go ========
+
+
+======== FILE: ./authentication/example_test.go ========
+
+package authentication
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/duizendstra-com/go-dui/cache"
+)
+
+// ExampleTokenManager_basic demonstrates creating and using a TokenManager.
+func ExampleTokenManager_basic() {
+	// Create a TokenManager with an in-memory cache.
+	tm := NewTokenManager(cache.NewInMemoryCache())
+
+	// Register a fetcher that returns a dynamic token valid for 5 seconds.
+	tm.RegisterFetcher("my-service", func() (string, time.Time, error) {
+		return "dynamic-token", time.Now().Add(5 * time.Second), nil
+	})
+
+	// First call => fetch from the fetcher
+	token, err := tm.GetToken("my-service")
+	if err != nil {
+		fmt.Println("Error fetching token:", err)
+		return
+	}
+	fmt.Println("Initial token:", token)
+
+	// Second call => uses the cached token
+	token2, err := tm.GetToken("my-service")
+	if err != nil {
+		fmt.Println("Error fetching second token:", err)
+		return
+	}
+	fmt.Println("Cached token:", token2)
+
+	// Output:
+	// Initial token: dynamic-token
+	// Cached token: dynamic-token
+}
+
+// ExampleTokenManager_error demonstrates error handling scenarios.
+func ExampleTokenManager_error() {
+	tm := NewTokenManager(cache.NewInMemoryCache())
+
+	// Attempt to get a token for an unknown service => error
+	_, err := tm.GetToken("unknown-service")
+	if err != nil {
+		fmt.Println("Expected error for unknown-service:", err)
+	}
+
+	// Register a fetcher that always fails
+	tm.RegisterFetcher("failing-service", func() (string, time.Time, error) {
+		return "", time.Time{}, fmt.Errorf("intentional failure")
+	})
+
+	_, err = tm.GetToken("failing-service")
+	if err != nil {
+		fmt.Println("Expected error for failing-service:", err)
+	}
+
+	// Output:
+	// Expected error for unknown-service: no fetcher registered for key: unknown-service
+	// Expected error for failing-service: failed to fetch token for key failing-service: intentional failure
+}
+
+======== END FILE: ./authentication/example_test.go ========
+
+
+======== FILE: ./store/firestorestore.go ========
+
+package store
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/duizendstra-com/go-dui/firestore"
+)
+
+// kvInterface matches the methods we need from a Firestore-like KV.
+// It allows us to inject either a real FirestoreKV or a mock implementation for testing.
+type kvInterface interface {
+	Get(ctx context.Context, key string) (string, error)
+	Set(ctx context.Context, key, value string) error
+	Close() error
+}
+
+// FirestoreStore implements the Store interface using a Firestore-based KV (from the firestore package).
+// This allows storing key-value data in a Firestore collection without changing the store's interface.
+type FirestoreStore struct {
+	kv kvInterface
+}
+
+// NewFirestoreStore creates a Store implementation backed by Firestore.
+// It uses firestore.NewKV to connect to a Firestore project and collection.
+//
+// Example usage:
+//
+//	ctx := context.Background()
+//	s, err := NewFirestoreStore(ctx, "my-gcp-project", "my-collection")
+//	if err != nil {
+//	  log.Fatalf("failed to create FirestoreStore: %v", err)
+//	}
+//	defer s.Close()
+//
+//	if err := s.Set(ctx, "foo", "bar"); err != nil {
+//	  log.Fatalf("Set failed: %v", err)
+//	}
+//
+//	val, err := s.Get(ctx, "foo")
+//	// ...
+func NewFirestoreStore(ctx context.Context, projectID, collection string) (Store, error) {
+	realKV, err := firestore.NewKV(ctx, projectID, collection)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create FirestoreKV for store: %w", err)
+	}
+	return &FirestoreStore{kv: realKV}, nil
+}
+
+// Get retrieves the value for a given key from Firestore. Returns an empty string if not found.
+func (s *FirestoreStore) Get(ctx context.Context, key string) (string, error) {
+	return s.kv.Get(ctx, key)
+}
+
+// Set stores the value for a given key, overwriting any existing value.
+func (s *FirestoreStore) Set(ctx context.Context, key, value string) error {
+	return s.kv.Set(ctx, key, value)
+}
+
+// Close releases any resources associated with the Firestore store.
+func (s *FirestoreStore) Close() error {
+	return s.kv.Close()
+}
+
+======== END FILE: ./store/firestorestore.go ========
+
+
+======== FILE: ./store/doc.go ========
+
+// Package store provides a key-value storage abstraction through the Store interface.
+// It may use various backends to store data, such as Firestore, in-memory implementations,
+// or other systems. By depending on interfaces rather than concrete types, you can easily
+// swap implementations or mock the store in tests.
+//
+// This package focuses on production code. For testing without relying on external services,
+// use mocks from the testutil package. For example, testutil.NewMockKV() can simulate Firestore KV behavior in-memory.
+package store
+
+======== END FILE: ./store/doc.go ========
+
+
+======== FILE: ./store/store.go ========
+
+// store/store.go
+package store
+
+import "context"
+
+// KV defines simple key-value operations.
+// It's defined here in the consumer package (store) rather than in the producer package (firestore).
+type KV interface {
+	// Get retrieves the value for a given key. If not found, returns an empty string with no error.
+	Get(ctx context.Context, key string) (string, error)
+	// Set stores the value under the given key, overwriting existing values.
+	Set(ctx context.Context, key, value string) error
+	// Close releases resources held by the KV implementation.
+	Close() error
+}
+
+// Store defines a generic interface for key-value data storage.
+// Store implementations can use a KV to persist data.
+type Store interface {
+	Get(ctx context.Context, key string) (string, error)
+	Set(ctx context.Context, key, value string) error
+	Close() error
+}
+
+======== END FILE: ./store/store.go ========
+
+
+======== FILE: ./store/firestorestore_test.go ========
+
+package store
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/duizendstra-com/go-dui/internal/testutil"
+)
+
+// TestFirestoreStoreWithMock demonstrates how to test the FirestoreStore using a mock
+// instead of a real Firestore connection. By substituting testutil.NewMockFirestoreKV()
+// we avoid dependencies on external services.
+func TestFirestoreStoreWithMock(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	mockKV := testutil.NewMockFirestoreKV() // mock Firestore-like KV from testutil
+	store := &FirestoreStore{kv: mockKV}
+
+	// Test Set
+	if err := store.Set(ctx, "testKey", "testValue"); err != nil {
+		t.Fatalf("Set failed: %v", err)
+	}
+
+	// Test Get existing key
+	val, err := store.Get(ctx, "testKey")
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+	if val != "testValue" {
+		t.Errorf("expected 'testValue', got %q", val)
+	}
+
+	// Test Get non-existing key
+	val, err = store.Get(ctx, "nonexistentKey")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if val != "" {
+		t.Errorf("expected empty string for nonexistentKey, got %q", val)
+	}
+}
+
+======== END FILE: ./store/firestorestore_test.go ========
+
+
+======== FILE: ./store/example_test.go ========
+
+package store
+
+import (
+	"context"
+	"fmt"
+	"log"
+)
+
+// ExampleFirestoreStore demonstrates how to create and use a Firestore-backed Store.
+// In practice, you would need valid GCP credentials and a Firestore collection.
+// This example assumes that the Firestore environment is properly set up.
+func ExampleFirestoreStore() {
+	ctx := context.Background()
+	projectID := "your-gcp-project-id" // Replace with your GCP project ID
+	collection := "example-collection" // Replace with your Firestore collection name
+
+	// Create the store
+	s, err := NewFirestoreStore(ctx, projectID, collection)
+	if err != nil {
+		log.Fatalf("failed to create FirestoreStore: %v", err)
+	}
+	defer s.Close()
+
+	// Set a value
+	if err := s.Set(ctx, "myKey", "myValue"); err != nil {
+		log.Fatalf("failed to set value: %v", err)
+	}
+
+	// Get the value
+	value, err := s.Get(ctx, "myKey")
+	if err != nil {
+		log.Fatalf("failed to get value: %v", err)
+	}
+
+	fmt.Println("Retrieved value:", value)
+}
+
+======== END FILE: ./store/example_test.go ========
+
