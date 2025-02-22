@@ -2,7 +2,7 @@
 
 **Proprietary Software License (Generic - Consultant-Activated)**
 
-This is a generic proprietary software license for the `dui-go-jato` library (the "Software"), owned by Duizendstra.com BV ("Licensor"). This license automatically applies to any client ("Licensee") of Jasper Duizendstra ("Consultant") for whom Consultant implements or integrates the Software, *provided that* Consultant is authorized by Licensor to provide such services.
+This is a generic proprietary software license for the `dui-go-template` library (the "Software"), owned by Duizendstra.com BV ("Licensor"). This license automatically applies to any client ("Licensee") of Jasper Duizendstra ("Consultant") for whom Consultant implements or integrates the Software, *provided that* Consultant is authorized by Licensor to provide such services.
 
 Copyright © 2024-2025 duizendstra.com BV. All rights reserved.
 
