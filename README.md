@@ -28,13 +28,53 @@ This package offers a generic `Cache` interface for in-memory and external cachi
 
 ### Env (`github.com/duizendstra/dui-go/env`)
 
-This package simplifies environment variable handling by providing a structured way to load and validate them.
+This package simplifies loading environment variables into Go structs in a type-safe manner. It uses reflection and struct tags for configuration, avoiding external dependencies.
 
 **Key Features:**
 
-*   **`EnvVar` struct:** Defines the configuration for an environment variable, including its key, whether it's mandatory, a default value, and an optional validation function.
-*   **`EnvLoader`:** Reads a list of `EnvVar` configurations, retrieves their values from the environment, applies defaults, and performs validation.
-*   **Error reporting:** Returns errors if mandatory variables are missing or validation fails.
+*   **`Process(spec interface{})` function:** Populates the fields of a struct pointer (`spec`) based on environment variables.
+*   **Tag-Based Configuration:**
+    *   `env:"VAR_NAME"`: Specifies the environment variable name (defaults to uppercase field name).
+    *   `envDefault:"value"`: Provides a default value if the environment variable is not set or empty.
+    *   `envRequired:"true"`: Marks the variable as mandatory; returns an error if missing or empty.
+*   **Type Safety:** Loads values directly into struct fields with their defined types.
+*   **Supported Types:** Currently handles `string`, `int`, `int64`, and `bool`.
+*   **Error Reporting:** Returns errors for missing required variables, parsing issues, or unsupported types.
+
+**Example Usage:**
+
+```go
+package main
+
+import (
+	"fmt"
+	"log"
+	"os"
+
+	"github.com/duizendstra/dui-go/env"
+)
+
+type Config struct {
+	Host      string `env:"APP_HOST" envDefault:"localhost"`
+	Port      int    `env:"APP_PORT" envRequired:"true"`
+	DebugMode bool   `env:"DEBUG_MODE" envDefault:"false"`
+}
+
+func main() {
+	// Example: Set a required environment variable
+	os.Setenv("APP_PORT", "8080")
+	defer os.Unsetenv("APP_PORT")
+
+	var cfg Config
+	err := env.Process(&cfg)
+	if err != nil {
+		log.Fatalf("Error loading config: %v", err)
+	}
+
+	fmt.Printf("Host: %s, Port: %d, Debug: %t\n", cfg.Host, cfg.Port, cfg.DebugMode)
+	// Output: Host: localhost, Port: 8080, Debug: false
+}
+```
 
 ### Errors (`github.com/duizendstra/dui-go/errors`)
 

@@ -1,20 +1,19 @@
-// Package env provides functionality for loading and validating environment variables.
-// It allows you to define a list of expected environment variables, specifying whether
-// they are mandatory, have a default value, or require validation.
+// Package env provides utilities for loading environment variables
+// directly into Go structs. Configuration is managed via struct tags.
 //
-// Typical usage:
+// It aims to simplify application configuration by providing a type-safe
+// way to consume environment variables with support for defaults and
+// required fields, without requiring external dependencies.
 //
-//	loader := env.NewEnvLoader()
-//	vars := []env.EnvVar{
-//	  {Key: "API_KEY", Mandatory: true},
-//	  {Key: "PORT", Mandatory: false, DefaultValue: "8080"},
-//	}
-//	envMap, err := loader.LoadEnv(vars) // Note: ctx parameter removed
-//	if err != nil {
-//	  // handle error (e.g., missing mandatory variable)
-//	}
+// Currently supported field types for struct population are:
+// string, int, int64, and bool.
 //
-// The EnvLoader returns errors if mandatory variables are missing or validation fails.
-// Using this approach simplifies startup configuration and ensures that your application
-// clearly reports configuration issues through returned errors.
+// Struct tags used for configuration:
+//   - `env:"ENV_VAR_NAME"`: Specifies the environment variable name.
+//     Defaults to the uppercase field name if omitted or empty.
+//   - `envDefault:"value"`: Provides a default string value if the
+//     environment variable is not set or is empty. This string will be
+//     parsed to the field's type.
+//   - `envRequired:"true"`: Marks the environment variable as mandatory.
+//     An error is returned if it's not set or is an empty string.
 package env
