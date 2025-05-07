@@ -1,6 +1,6 @@
 module github.com/duizendstra/dui-go
 
-go 1.24.2
+go 1.24.3
 
 require (
 	cloud.google.com/go/compute/metadata v0.6.0

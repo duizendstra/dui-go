@@ -65,7 +65,7 @@ The AI context generation mechanism (e.g., IDX AI feature, or `./contextvibes de
 
 *   **Project Description:**
     *   This is a Go utility library (`dui-go`) designed to provide foundational components for building Go-based services, particularly those interacting with Google Cloud Platform.
-    *   It offers packages for common tasks such as authentication token management, caching, environment variable handling, structured error types, Firestore-backed key-value stores, and structured logging for Cloud Logging.
+    *   It offers packages for common tasks such as authentication token management, caching, **type-safe loading of environment variables into structs via tags (`env` package)**, structured error types, Firestore-backed key-value stores, and structured logging for Cloud Logging.
 
 *   **Tech Stack:**
     *   **Language:** Go (version specified in `.idx/dev.nix`, e.g., `pkgs.go_1_24`).
@@ -76,7 +76,7 @@ The AI context generation mechanism (e.g., IDX AI feature, or `./contextvibes de
         *   Firebase Studio (formerly Project IDX).
         *   Nix (`.idx/dev.nix` defines base tools like Go version, git, gcloud, `gopls`, `delve`, and VSCode extensions like `golang.go`).
         *   **`contextvibes` CLI:** Used for workflow automation.
-            *   **Installation:** `GOBIN=$(pwd)/bin go install github.com/contextvibes/cli/cmd/contextvibes@v0.0.5` (Installs to `./bin/`, run as `./bin/contextvibes` or ensure `./bin` is in PATH).
+            *   **Installation:** `GOBIN=/home/user/dui-go/bin go install github.com/contextvibes/cli/cmd/contextvibes@v0.0.5` (Installs to `./bin/`, run as `./bin/contextvibes` or ensure `./bin` is in PATH).
             *   **Usage:** Commands like `./bin/contextvibes kickoff`, `./bin/contextvibes commit`, `./bin/contextvibes test`, `./bin/contextvibes format`, etc. (See `./bin/contextvibes --help`)
     *   **Testing:** Go standard testing (`testing` package, `_test.go` files), invoked via `./bin/contextvibes test` or `go test ./...`. Encourage table-driven tests where appropriate.
 
@@ -104,7 +104,7 @@ The AI context generation mechanism (e.g., IDX AI feature, or `./contextvibes de
 
 *   **Security Notes:**
     *   **Auth:** Relies on GCP Application Default Credentials (ADC).
-    *   **Input Validation:** Library expects consumers to perform validation of inputs before calling library functions.
+    *   **Input Validation:** Library expects consumers to perform validation of inputs before calling library functions. The `env` package handles basic required checks via tags.
     *   **Error Handling:** Packages return errors; the `errors` package provides structure. Avoid leaking sensitive information in error messages.
     *   **Dependencies:** Keep Go modules updated (`go list -m -u all`). Suggest running this periodically.
     *   **AI-Generated Code:** All AI-generated code suggestions must be critically reviewed by the developer for correctness and security implications.
@@ -128,6 +128,7 @@ The AI context generation mechanism (e.g., IDX AI feature, or `./contextvibes de
     *   When providing code modifications, clearly state the filename and provide sufficient context. For significant changes or new files, provide the complete file content.
     *   For generating new Go files or multi-line content, use `cat <<EOF > path/to/filename.go ... EOF` within a `bash` block.
     *   Utilize the standard `log/slog` package for any logging. If context suggests Cloud Logging, recommend using the `logging/cloudlogging` handler from this library.
+    *   **Configuration Loading:** When generating code that requires loading configuration from environment variables, **prefer using the `env.Process` function** with a tagged struct pointer over manual `os.Getenv` calls.
     *   **Error Handling:**
         *   Always check returned errors: `if err != nil { ... }`.
         *   Wrap errors with contextual information using `fmt.Errorf("action failed: %w", err)`.
