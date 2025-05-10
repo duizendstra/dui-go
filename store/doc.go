@@ -6,6 +6,21 @@
 // based on Firestore) might provide. The FirestoreStore implementation in this
 // package, for example, uses an object that satisfies this KV interface.
 //
+// Hypothetical Store Interface Usage:
+//
+//	import "github.com/duizendstra/dui-go/store"
+//
+//	// var myAppStore store.Store = // ... obtain a store.Store implementation (e.g., NewFirestoreStore)
+//	//
+//	// func processItem(ctx context.Context, itemID string, itemValue string, s store.Store) error {
+//	//     if err := s.Set(ctx, itemID, itemValue); err != nil {
+//	//         return err
+//	//     }
+//	//     retrievedValue, err := s.Get(ctx, itemID)
+//	//     // ...
+//	//     return nil
+//	// }
+//
 // Relationship with firestore.KV:
 // The `firestore` package in this library provides `firestore.FirestoreKV`, a concrete
 // key-value implementation using Google Cloud Firestore. `firestore.FirestoreKV` can

@@ -12,7 +12,7 @@ type AppConfig struct {
 	Host        string `env:"APP_HOST" envDefault:"localhost"`
 	Port        int    `env:"APP_PORT" envRequired:"true"`
 	DebugMode   bool   `env:"APP_DEBUG_MODE" envDefault:"false"`
-	ServiceName string `env:"SERVICE_NAME"` // Will look for SERVICE_NAME (uppercase field name)
+	ServiceName string `env:"SERVICE_NAME"`  // Will look for SERVICE_NAME (uppercase field name)
 	EmptyEnvVar string `env:"EMPTY_ENV_VAR"` // Env var set to empty, no default
 	NotSetInt   int    `env:"NOT_SET_INT"`   // Go zero value expected
 	NotSetBool  bool   `env:"NOT_SET_BOOL"`  // Go zero value expected
@@ -32,7 +32,7 @@ func ExampleProcess() {
 		os.Unsetenv("SERVICE_NAME")
 		os.Unsetenv("APP_DEBUG_MODE")
 		os.Unsetenv("EMPTY_ENV_VAR")
-		os.Unsetenv("NOT_SET_INT")  // Ensure these are not set for the test
+		os.Unsetenv("NOT_SET_INT") // Ensure these are not set for the test
 		os.Unsetenv("NOT_SET_BOOL")
 	}()
 

@@ -9,18 +9,18 @@ import (
 )
 
 type testConfig struct {
-	Name           string `env:"TEST_NAME" envDefault:"DefaultName"`
-	Port           int    `env:"TEST_PORT" envRequired:"true"`
-	Timeout        int64  `env:"TEST_TIMEOUT" envDefault:"5000"`
-	Enabled        bool   `env:"TEST_ENABLED" envDefault:"true"` // Default "true" string for bool
-	AutoStart      bool   `env:"AUTO_START" envDefault:"false"`// Default "false" string for bool
-	NonTagged      string // Should look for NONTAGGED
-	MissingVar     string `env:"MISSING_VAR" envDefault:"DefaultMissing"`
-	EmptyVarSet    string `env:"EMPTY_VAR_SET"` // Set to "" explicitly, no default
+	Name            string `env:"TEST_NAME" envDefault:"DefaultName"`
+	Port            int    `env:"TEST_PORT" envRequired:"true"`
+	Timeout         int64  `env:"TEST_TIMEOUT" envDefault:"5000"`
+	Enabled         bool   `env:"TEST_ENABLED" envDefault:"true"` // Default "true" string for bool
+	AutoStart       bool   `env:"AUTO_START" envDefault:"false"`  // Default "false" string for bool
+	NonTagged       string // Should look for NONTAGGED
+	MissingVar      string `env:"MISSING_VAR" envDefault:"DefaultMissing"`
+	EmptyVarSet     string `env:"EMPTY_VAR_SET"`                                  // Set to "" explicitly, no default
 	EmptyVarDefault string `env:"EMPTY_VAR_DEFAULT" envDefault:"DefaultForEmpty"` // Not set, or set to "", should use default
-	NotSetInt      int    `env:"NOT_SET_INT"`   // Expect Go zero value
-	NotSetBool     bool   `env:"NOT_SET_BOOL"`  // Expect Go zero value
-	EmptyTagField  string `env:"" envDefault:"EmptyTagDefault"` // Uppercase field name: EMPTYTAGFIELD
+	NotSetInt       int    `env:"NOT_SET_INT"`                                    // Expect Go zero value
+	NotSetBool      bool   `env:"NOT_SET_BOOL"`                                   // Expect Go zero value
+	EmptyTagField   string `env:"" envDefault:"EmptyTagDefault"`                  // Uppercase field name: EMPTYTAGFIELD
 }
 
 type requiredOnlyConfig struct {
@@ -66,13 +66,13 @@ func setupEnvVars(t *testing.T, vars map[string]string) func() {
 
 func TestProcess_Success(t *testing.T) {
 	cleanup := setupEnvVars(t, map[string]string{
-		"TEST_NAME":    "ActualName",
-		"TEST_PORT":    "8080",
-		"TEST_TIMEOUT": "30",
-		"TEST_ENABLED": "false", // Override default
-		"AUTO_START":   "true",  // Override default
-		"NONTAGGED":    "NonTaggedValue",
-		"EMPTY_VAR_SET": "",      // Explicitly empty
+		"TEST_NAME":     "ActualName",
+		"TEST_PORT":     "8080",
+		"TEST_TIMEOUT":  "30",
+		"TEST_ENABLED":  "false", // Override default
+		"AUTO_START":    "true",  // Override default
+		"NONTAGGED":     "NonTaggedValue",
+		"EMPTY_VAR_SET": "", // Explicitly empty
 		"EMPTYTAGFIELD": "FromEnv",
 	})
 	defer cleanup()
@@ -87,11 +87,11 @@ func TestProcess_Success(t *testing.T) {
 	assert.Equal(t, false, cfg.Enabled)
 	assert.Equal(t, true, cfg.AutoStart)
 	assert.Equal(t, "NonTaggedValue", cfg.NonTagged)
-	assert.Equal(t, "DefaultMissing", cfg.MissingVar) // Uses default as MISSING_VAR is not set
-	assert.Equal(t, "", cfg.EmptyVarSet)              // Explicit empty string from env
+	assert.Equal(t, "DefaultMissing", cfg.MissingVar)       // Uses default as MISSING_VAR is not set
+	assert.Equal(t, "", cfg.EmptyVarSet)                    // Explicit empty string from env
 	assert.Equal(t, "DefaultForEmpty", cfg.EmptyVarDefault) // Uses default as EMPTY_VAR_DEFAULT is not set
-	assert.Equal(t, 0, cfg.NotSetInt)                  // Go zero value
-	assert.Equal(t, false, cfg.NotSetBool)             // Go zero value
+	assert.Equal(t, 0, cfg.NotSetInt)                       // Go zero value
+	assert.Equal(t, false, cfg.NotSetBool)                  // Go zero value
 	assert.Equal(t, "FromEnv", cfg.EmptyTagField)
 }
 
@@ -101,10 +101,16 @@ func TestProcess_DefaultsAndZeroValues(t *testing.T) {
 		"NONTAGGED", "MISSING_VAR", "EMPTY_VAR_SET", "EMPTY_VAR_DEFAULT",
 		"NOT_SET_INT", "NOT_SET_BOOL", "EMPTYTAGFIELD",
 	}
-	originalValues := make(map[string]struct{ v string; e bool })
+	originalValues := make(map[string]struct {
+		v string
+		e bool
+	})
 	for _, k := range varsToManage {
 		v, e := os.LookupEnv(k)
-		originalValues[k] = struct{ v string; e bool }{v, e}
+		originalValues[k] = struct {
+			v string
+			e bool
+		}{v, e}
 		if k != "TEST_PORT" { // TEST_PORT needs to be set for this specific test to pass Process
 			os.Unsetenv(k)
 		}
@@ -112,7 +118,6 @@ func TestProcess_DefaultsAndZeroValues(t *testing.T) {
 	// Set the required TEST_PORT for this test
 	err := os.Setenv("TEST_PORT", "9090")
 	require.NoError(t, err)
-
 
 	defer func() {
 		for _, k := range varsToManage {
@@ -124,7 +129,6 @@ func TestProcess_DefaultsAndZeroValues(t *testing.T) {
 			}
 		}
 	}()
-
 
 	var cfg testConfig
 	err = Process(&cfg)
@@ -155,7 +159,6 @@ func TestProcess_RequiredMissing(t *testing.T) {
 		// For testConfig, TEST_NAME doesn't need to be set for this specific check, but good to control
 		os.Unsetenv("TEST_NAME")
 
-
 		defer func() {
 			if testPortExists {
 				os.Setenv("TEST_PORT", originalTestPort)
@@ -181,7 +184,7 @@ func TestProcess_RequiredMissing(t *testing.T) {
 		originalMustExist, mustExistExists := os.LookupEnv("MUST_EXIST")
 		originalMustExistToo, mustExistTooExists := os.LookupEnv("MUST_EXIST_TOO")
 
-		os.Setenv("MUST_EXIST", "")      // Set to empty, which is invalid for required
+		os.Setenv("MUST_EXIST", "")        // Set to empty, which is invalid for required
 		os.Setenv("MUST_EXIST_TOO", "123") // Set this required field to a valid value
 
 		defer func() {
@@ -210,7 +213,7 @@ func TestProcess_RequiredMissing(t *testing.T) {
 		originalMustExistToo, mustExistTooExists := os.LookupEnv("MUST_EXIST_TOO")
 
 		os.Setenv("MUST_EXIST", "ValidValue") // Set this required field to a valid value
-		os.Unsetenv("MUST_EXIST_TOO")       // Ensure this required field is not set
+		os.Unsetenv("MUST_EXIST_TOO")         // Ensure this required field is not set
 
 		defer func() {
 			if mustExistExists {
@@ -241,18 +244,18 @@ func TestProcess_ParseErrors(t *testing.T) {
 		expectedMsg string
 	}{
 		{
-			name: "int parse error",
-			envVars: map[string]string{"TEST_PORT": "not-an-int"},
+			name:        "int parse error",
+			envVars:     map[string]string{"TEST_PORT": "not-an-int"},
 			expectedMsg: "failed to parse int for Port (variable TEST_PORT, value: 'not-an-int')",
 		},
 		{
-			name: "bool parse error",
-			envVars: map[string]string{"TEST_ENABLED": "not-a-bool"},
+			name:        "bool parse error",
+			envVars:     map[string]string{"TEST_ENABLED": "not-a-bool"},
 			expectedMsg: "failed to parse bool for Enabled (variable TEST_ENABLED, value: 'not-a-bool')",
 		},
 		{
-			name: "int64 parse error",
-			envVars: map[string]string{"TEST_TIMEOUT": "not-int64"},
+			name:        "int64 parse error",
+			envVars:     map[string]string{"TEST_TIMEOUT": "not-int64"},
 			expectedMsg: "failed to parse int for Timeout (variable TEST_TIMEOUT, value: 'not-int64')",
 		},
 	}
@@ -339,7 +342,7 @@ func TestProcess_EmptyEnvTagDefaultsToFieldName(t *testing.T) {
 	// Test when MYFIELD is set from env
 	cleanup := setupEnvVars(t, map[string]string{"MYFIELD": "worldFromEmptyTag"})
 	defer cleanup() // This will restore MYFIELD to its state before this setupEnvVars call
-	
+
 	err = Process(&cfg) // Re-process with the new env var
 	require.NoError(t, err)
 	assert.Equal(t, "worldFromEmptyTag", cfg.MyField)
@@ -355,7 +358,11 @@ func TestProcess_RequiredFieldIgnoresDefault(t *testing.T) {
 		originalImpVal, impValExists := os.LookupEnv("IMPORTANT_VAL")
 		os.Unsetenv("IMPORTANT_VAL")
 		defer func() {
-			if impValExists { os.Setenv("IMPORTANT_VAL", originalImpVal) } else { os.Unsetenv("IMPORTANT_VAL") }
+			if impValExists {
+				os.Setenv("IMPORTANT_VAL", originalImpVal)
+			} else {
+				os.Unsetenv("IMPORTANT_VAL")
+			}
 		}()
 
 		err := Process(&cfg)
@@ -367,9 +374,13 @@ func TestProcess_RequiredFieldIgnoresDefault(t *testing.T) {
 		originalImpVal, impValExists := os.LookupEnv("IMPORTANT_VAL")
 		os.Setenv("IMPORTANT_VAL", "actualValueFromEnv")
 		defer func() {
-			if impValExists { os.Setenv("IMPORTANT_VAL", originalImpVal) } else { os.Unsetenv("IMPORTANT_VAL") }
+			if impValExists {
+				os.Setenv("IMPORTANT_VAL", originalImpVal)
+			} else {
+				os.Unsetenv("IMPORTANT_VAL")
+			}
 		}()
-		
+
 		err := Process(&cfg)
 		require.NoError(t, err)
 		assert.Equal(t, "actualValueFromEnv", cfg.ImportantValue)
@@ -389,8 +400,16 @@ func TestProcess_EmptyStringFromEnvForNonString(t *testing.T) {
 	os.Setenv("MY_INT", "")  // Set to empty
 	os.Setenv("MY_BOOL", "") // Set to empty
 	defer func() {
-		if myIntExists { os.Setenv("MY_INT", originalMyInt) } else { os.Unsetenv("MY_INT") }
-		if myBoolExists { os.Setenv("MY_BOOL", originalMyBool) } else { os.Unsetenv("MY_BOOL") }
+		if myIntExists {
+			os.Setenv("MY_INT", originalMyInt)
+		} else {
+			os.Unsetenv("MY_INT")
+		}
+		if myBoolExists {
+			os.Setenv("MY_BOOL", originalMyBool)
+		} else {
+			os.Unsetenv("MY_BOOL")
+		}
 	}()
 
 	err := Process(&cfg)
@@ -400,28 +419,35 @@ func TestProcess_EmptyStringFromEnvForNonString(t *testing.T) {
 }
 
 func TestProcess_UnexportedField(t *testing.T) {
-    type Config struct {
-        Exported   string `env:"EXPORTED_FIELD" envDefault:"exported"`
-        unexported string // No tags, unexported
-    }
-    var cfg Config
-    cfg.unexported = "initial" // Set initial value for unexported field
+	type Config struct {
+		Exported   string `env:"EXPORTED_FIELD" envDefault:"exported"`
+		unexported string // No tags, unexported
+	}
+	var cfg Config
+	cfg.unexported = "initial" // Set initial value for unexported field
 
-    // Explicitly manage env vars for this test
-    originalExported, exportedExists := os.LookupEnv("EXPORTED_FIELD")
-    originalUnexportedEnv, unexportedEnvExists := os.LookupEnv("UNEXPORTEDFIELD") // Default name for unexported
+	// Explicitly manage env vars for this test
+	originalExported, exportedExists := os.LookupEnv("EXPORTED_FIELD")
+	originalUnexportedEnv, unexportedEnvExists := os.LookupEnv("UNEXPORTEDFIELD") // Default name for unexported
 
-    os.Setenv("EXPORTED_FIELD", "from_env")
-    os.Setenv("UNEXPORTEDFIELD", "env_unexported") // This should not affect the unexported field because it's unexported
+	os.Setenv("EXPORTED_FIELD", "from_env")
+	os.Setenv("UNEXPORTEDFIELD", "env_unexported") // This should not affect the unexported field because it's unexported
 
-    defer func() {
-        if exportedExists { os.Setenv("EXPORTED_FIELD", originalExported) } else { os.Unsetenv("EXPORTED_FIELD") }
-        if unexportedEnvExists { os.Setenv("UNEXPORTEDFIELD", originalUnexportedEnv) } else { os.Unsetenv("UNEXPORTEDFIELD") }
-    }()
+	defer func() {
+		if exportedExists {
+			os.Setenv("EXPORTED_FIELD", originalExported)
+		} else {
+			os.Unsetenv("EXPORTED_FIELD")
+		}
+		if unexportedEnvExists {
+			os.Setenv("UNEXPORTEDFIELD", originalUnexportedEnv)
+		} else {
+			os.Unsetenv("UNEXPORTEDFIELD")
+		}
+	}()
 
-    err := Process(&cfg)
-    require.NoError(t, err)
-    assert.Equal(t, "from_env", cfg.Exported)
-    assert.Equal(t, "initial", cfg.unexported, "Unexported field should not be modified by Process")
+	err := Process(&cfg)
+	require.NoError(t, err)
+	assert.Equal(t, "from_env", cfg.Exported)
+	assert.Equal(t, "initial", cfg.unexported, "Unexported field should not be modified by Process")
 }
-
