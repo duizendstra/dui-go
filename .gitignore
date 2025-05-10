@@ -1,23 +1,86 @@
-# Ignore everything
+# Common OS/IDE generated files
+.DS_Store
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Go build artifacts and local tooling
+/bin/    # Compiled binaries for this project or tools
+vendor/  # Go vendor directory, if ever used
+
+# Log files
+*.log
+contextvibes_ai_trace.log # Specific log from ContextVibes CLI
+
+# ContextVibes CLI generated artifacts & user-specific config
+STRATEGIC_KICKOFF_PROTOCOL_FOR_AI.md
+contextvibes.md
+.contextvibes.yaml # User-specific CLI configuration
+
+# Terraform/IaC specific (less likely for a pure library like dui-go, but good practice)
+.terraform/
+terraform.tfstate
+terraform.tfstate.backup
+*.tfvars
+tfplan.out
+
+# Python specific (less likely for dui-go)
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# Node.js specific (less likely for dui-go)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+# package-lock.json # Decide policy if ever used
+# yarn.lock         # Decide policy if ever used
+
+# --- Default ignore everything else NOT explicitly un-ignored below ---
 *
 
-# But not these files...
+# --- UN-IGNORE SECTION ---
+# Must be ordered from more general to more specific if there's overlap,
+# or ensure distinct paths.
+
+# Version control itself
 !/.gitignore
 
-!*.go
-!go.sum
-!go.mod
-
-!README.md
+# Root level essential files
 !LICENSE
+!README.md
 !CONTRIBUTING.md
 !CHANGELOG.md
+!go.mod
+!go.sum
 
+# Project IDX configuration directory and its contents
+!/.idx/
 !/.idx/dev.nix
 !/.idx/airules.md
 
-# ...even if they are in subdirectories
-!*/
+# Docs directory and its specific primary Markdown files
+!/docs/
+!/docs/AI_PROJECT_SPECIFICS.md
+!/docs/ROADMAP.md
+# Add other specific primary Markdown docs in /docs/ here if any, e.g., !/docs/ANOTHER_GUIDE.md
 
-# make sure this is ignored
-/bin/
+# Core Go source code directories - un-ignore the directories themselves
+!/authentication/
+!/cache/
+!/errors/
+!/firestore/
+!/internal/
+!/internal/testutil/ # Also un-ignore subdirectories containing Go code
+!/logging/
+!/logging/cloudlogging/ # Also un-ignore subdirectories containing Go code
+!/store/
+
+# Un-ignore all .go files within any directory that has been un-ignored above.
+# This is a powerful pattern to catch all Go source files.
+!**/*.go

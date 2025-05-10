@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+*(For next version after 0.1.0)*
+
+### Changed
+*(For next version after 0.1.0)*
+
+### Fixed
+*(For next version after 0.1.0)*
+
+---
+
+## [0.1.0] - 2025-05-10
+
+### Added
+*   **Comprehensive AI Development Guidelines:**
+    *   Core `.idx/airules.md` (v3.1) established for general Go AI assistance in Firebase Studio, instructing AI to prioritize project-specific rules.
+    *   Dedicated `docs/AI_PROJECT_SPECIFICS.md` (v1.0) created with detailed AI guidelines, context, architectural patterns, and specific rules tailored for `dui-go` library development.
+*   **Enhanced Contributor Documentation (`CONTRIBUTING.md`):**
+    *   Added detailed "Documentation Standards and Workflow" section, including filename conventions and a release finalization checklist.
+    *   Incorporated recommendations for using the `ContextVibes CLI` for development workflows.
+*   **Firebase Studio Integration:**
+    *   Added an "Explore in Firebase Studio" button and explanatory section to `README.md` for easier access to the `dui-go` codebase within the IDE.
+    *   Updated `dui-go/.idx/dev.nix` to include `pkgs.gh` and an `onCreate` script to install a pinned version of `ContextVibes CLI` (v0.1.1 recommended, adjust if different), plus an `onStart` script to check for CLI presence.
+
+### Changed
+*   **Documentation Overhaul & Refinement:**
+    *   Revised and enhanced all package-level `doc.go` files for improved clarity, purpose statements, and illustrative usage snippets (targeting an "Excellent" standard).
+    *   Refined root `README.md` for better structure, added a "Why `dui-go`?" section, improved package linking (to subdirectories/godoc), and updated the main usage example.
+    *   Moved `ROADMAP.md` to `docs/ROADMAP.md` and ensured its content reflects current plans.
+    *   Updated `.gitignore` with more robust include-based logic, ensuring correct tracking of documentation and ignoring of CLI/OS artifacts (including `STRATEGIC_KICKOFF_PROTOCOL_FOR_AI.md` and user-specific `.contextvibes.yaml`).
+*   **Minor `doc.go` updates:** Ensured all examples are illustrative and clear. (Though no major code changes to the library itself were made in this pass, the documentation represents a significant update to how the library is understood and developed with AI assistance).
+
+---
+
 ## [0.0.2] - 2025-05-07
 
 ### Changed
@@ -44,6 +78,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 
 <!-- Link Definitions -->
-[Unreleased]: https://github.com/duizendstra/dui-go/compare/v0.0.2...HEAD
+[Unreleased]: https://github.com/duizendstra/dui-go/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/duizendstra/dui-go/compare/v0.0.2...v0.1.0
 [0.0.2]: https://github.com/duizendstra/dui-go/compare/v0.0.1...v0.0.2
 [0.0.1]: https://github.com/duizendstra/dui-go/releases/tag/v0.0.1

@@ -1,4 +1,5 @@
-// Package firestore provides a key-value abstraction on top of Google Cloud Firestore.
+// Package firestore provides a simplified Key-Value (KV) interface over Google Cloud Firestore,
+// making basic Get/Set operations straightforward.
 //
 // It defines a KV interface representing simple key-value operations (Get, Set, Close).
 // The FirestoreKV type is a concrete implementation of this KV interface, using a
@@ -8,6 +9,18 @@
 //
 // The Set operation writes or overwrites values, and Close releases underlying
 // Firestore client resources.
+//
+// Typical Usage:
+//
+//	import "github.com/duizendstra/dui-go/firestore"
+//
+//	// ctx := context.Background()
+//	// kvStore, err := firestore.NewKV(ctx, "my-gcp-project", "my-collection")
+//	// if err != nil { /* handle error */ }
+//	// defer kvStore.Close()
+//	//
+//	// kvStore.Set(ctx, "myKey", "myValue")
+//	// value, _ := kvStore.Get(ctx, "myKey")
 //
 // Relationship with store.KV:
 // The `store` package in this library defines its own `store.KV` interface for broader
@@ -19,6 +32,6 @@
 // key-value store implementation.
 //
 // For testing code that depends on FirestoreKV without connecting to a real Firestore
-// instance, consider using the MockFirestoreKV from the internal testutil package
+// instance, consider using the MockFirestoreKV from the internal/testutil package
 // (github.com/duizendstra/dui-go/internal/testutil).
 package firestore
