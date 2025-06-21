@@ -24,19 +24,19 @@ type Client struct {
 	logger    *slog.Logger
 }
 
-// NewClient creates a new, authenticated client for Google Secret Manager.
+// NewClient creates a new, authenticated client for Google Secret Manager
+// using the provided configuration.
 func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 	if cfg.ProjectID == "" {
 		return nil, fmt.Errorf("GCP ProjectID is required in the config")
 	}
 
-	// Use the provided logger, or default to a silent one if not provided.
 	logger := cfg.Logger
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 
-	logger.Info("Initializing Google Secret Manager client...")
+	logger.InfoContext(ctx, "Initializing Google Secret Manager client...")
 	gcpClient, err := secretmanager.NewClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create underlying secretmanager.Client: %w", err)
@@ -55,13 +55,13 @@ func (c *Client) GetSecret(ctx context.Context, secretID string) (string, error)
 		return "", fmt.Errorf("secretID cannot be empty")
 	}
 
-	c.logger.Debug("Fetching secret from Google Secret Manager", "secret_id", secretID)
+	c.logger.DebugContext(ctx, "Fetching secret from Google Secret Manager", "secret_id", secretID)
 	name := fmt.Sprintf("projects/%s/secrets/%s/versions/latest", c.projectID, secretID)
 	req := &secretmanagerpb.AccessSecretVersionRequest{Name: name}
 
 	result, err := c.gcpClient.AccessSecretVersion(ctx, req)
 	if err != nil {
-		c.logger.Error("Failed to access secret version", "name", name, "error", err)
+		c.logger.ErrorContext(ctx, "Failed to access secret version", "name", name, "error", err)
 		return "", fmt.Errorf("failed to access secret version '%s': %w", name, err)
 	}
 
@@ -69,7 +69,7 @@ func (c *Client) GetSecret(ctx context.Context, secretID string) (string, error)
 		return "", fmt.Errorf("retrieved secret payload for '%s' is nil", name)
 	}
 
-	c.logger.Info("Successfully fetched secret", "secret_id", secretID)
+	c.logger.DebugContext(ctx, "Successfully fetched secret", "secret_id", secretID)
 	return string(result.Payload.Data), nil
 }
 

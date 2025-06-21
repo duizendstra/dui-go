@@ -2,6 +2,8 @@ package gcs
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -9,45 +11,43 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestNewClient_Validation tests the constructor's input validation.
+func TestNewClient_Validation(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("Fails with empty bucket name", func(t *testing.T) {
+		cfg := Config{BucketName: ""}
+		_, err := NewClient(ctx, cfg)
+		require.Error(t, err, "Expected an error for empty bucket name but got nil")
+		assert.Equal(t, "GCS BucketName is required in the config", err.Error())
+	})
+
+	t.Run("Succeeds with non-empty bucket name", func(t *testing.T) {
+		// This will still fail if credentials are not available, but it will
+		// pass the initial validation check, which is what we're testing.
+		cfg := Config{BucketName: "a-valid-bucket"}
+		_, err := NewClient(ctx, cfg)
+		if err != nil {
+			assert.NotContains(t, err.Error(), "is required in the config")
+		}
+	})
+}
+
 // TestUpload_Validation tests the input validation for the Upload method.
 // It is a pure unit test and does not require a live GCS client.
 func TestUpload_Validation(t *testing.T) {
-	// Create a dummy client for testing validation logic. The internal gcsClient
-	// is nil because we only want to test the validation checks, which execute
-	// before the client is used.
-	client := &Client{gcsClient: nil}
+	// Create a dummy client for testing validation logic.
+	client := &Client{
+		gcsClient:  nil,
+		bucketName: "dummy-bucket", // The bucket is now part of the client.
+		logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
 	ctx := context.Background()
 	dummyReader := strings.NewReader("some data")
 
-	testCases := []struct {
-		name        string
-		bucket      string
-		object      string
-		expectError bool
-		errorMsg    string
-	}{
-		{
-			name:        "Fails with empty bucket name",
-			bucket:      "",
-			object:      "my-object",
-			expectError: true,
-			errorMsg:    "bucket name cannot be empty",
-		},
-		{
-			name:        "Fails with empty object name",
-			bucket:      "my-bucket",
-			object:      "",
-			expectError: true,
-			errorMsg:    "object name cannot be empty",
-		},
-	}
-
-	for _, tt := range testCases {
-		t.Run(tt.name, func(t *testing.T) {
-			err := client.Upload(ctx, tt.bucket, tt.object, dummyReader)
-
-			require.Error(t, err, "Expected a validation error but got nil")
-			assert.Equal(t, tt.errorMsg, err.Error(), "Error message mismatch")
-		})
-	}
+	t.Run("Fails with empty object name", func(t *testing.T) {
+		err := client.Upload(ctx, "", dummyReader)
+		require.Error(t, err, "Expected a validation error but got nil")
+		assert.Equal(t, "object name cannot be empty", err.Error())
+	})
 }

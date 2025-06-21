@@ -3,35 +3,43 @@
 //
 // It simplifies common operations like uploading objects and is designed to be
 // used as a generic, reusable library in any Go application that needs to
-// interact with GCS.
+// interact with GCS. The client is configured for a specific bucket upon
+// creation.
 //
 // Usage:
 //
 //	import (
 //		"context"
 //		"log"
+//		"log/slog"
+//		"os"
 //		"strings"
 //
-//		"github.com/your-org/goclient-gcs/gcs"
+//		"github.com/duizendstra/dui-go/gcs"
 //	)
 //
 //	func main() {
 //	    ctx := context.Background()
 //
+//	    // Configuration for the client.
+//	    cfg := gcs.Config{
+//	        BucketName: "my-gcs-bucket",
+//	        Logger:     slog.New(slog.NewJSONHandler(os.Stdout, nil)),
+//	    }
+//
 //	    // Create a new client. It uses Application Default Credentials.
-//	    client, err := gcs.NewClient(ctx)
+//	    client, err := gcs.NewClient(ctx, cfg)
 //	    if err != nil {
 //	        log.Fatalf("Failed to create GCS client: %v", err)
 //	    }
 //	    defer client.Close()
 //
-//	    // Prepare data to upload. An io.Reader is used for flexibility.
+//	    // Prepare data to upload.
 //	    data := strings.NewReader("This is the content of my file.")
-//	    bucketName := "my-gcs-bucket"
 //	    objectName := "path/to/my-object.txt"
 //
-//	    // Upload the data
-//	    if err := client.Upload(ctx, bucketName, objectName, data); err != nil {
+//	    // Upload the data to the configured bucket.
+//	    if err := client.Upload(ctx, objectName, data); err != nil {
 //	        log.Fatalf("Failed to upload object: %v", err)
 //	    }
 //
