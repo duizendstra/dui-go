@@ -2,7 +2,8 @@
 // from Google Cloud Secret Manager.
 //
 // It simplifies the interaction with the GCP API, providing a clean and focused
-// interface for fetching the latest version of secrets.
+// interface for fetching the latest version of secrets. The client can be
+// configured with an optional slog.Logger for structured logging.
 //
 // Usage:
 //
@@ -17,10 +18,16 @@
 //
 //	func main() {
 //	    ctx := context.Background()
-//	    projectID := os.Getenv("GCP_PROJECT_ID")
+//
+//	    // Configuration for the client
+//	    cfg := secretmanager.Config{
+//	        ProjectID: os.Getenv("GCP_PROJECT_ID"),
+//	        // Logger is optional. If nil, no logs will be produced.
+//	        Logger:    slog.New(slog.NewJSONHandler(os.Stdout, nil)),
+//	    }
 //
 //	    // Create a new client
-//	    client, err := secretmanager.NewClient(ctx, projectID)
+//	    client, err := secretmanager.NewClient(ctx, cfg)
 //	    if err != nil {
 //	        log.Fatalf("Failed to create secret manager client: %v", err)
 //	    }
