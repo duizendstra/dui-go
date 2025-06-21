@@ -279,9 +279,10 @@ func TestNewCloudLoggingHandler(t *testing.T) {
 
 				// Perform assertions based on the first key in the path
 				firstKey := tt.jsonKeyPath[0]
-				if firstKey == "message" {
+				switch firstKey {
+				case "message":
 					assert.Equal(t, tt.message, actualValue, "Message content mismatch. Full log: %s", trimmedOutput)
-				} else if firstKey == "severity" {
+				case "severity":
 					var expectedSeverityString string
 					switch tt.level {
 					case slog.LevelDebug:
@@ -304,7 +305,7 @@ func TestNewCloudLoggingHandler(t *testing.T) {
 						expectedSeverityString = "DEFAULT"
 					}
 					assert.Equal(t, expectedSeverityString, actualValue, "Severity mismatch. Full log: %s", trimmedOutput)
-				} else if firstKey == "logging.googleapis.com/sourceLocation" {
+				case "logging.googleapis.com/sourceLocation":
 					// Check structure of source location
 					sourceMap, ok := actualValue.(map[string]interface{})
 					require.True(t, ok, "sourceLocation is not a map. Full log: %s", trimmedOutput)

@@ -80,6 +80,7 @@ yarn-error.log*
 !/logging/
 !/logging/cloudlogging/ # Also un-ignore subdirectories containing Go code
 !/store/
+!/secretmanager/
 
 # Un-ignore all .go files within any directory that has been un-ignored above.
 # This is a powerful pattern to catch all Go source files.
