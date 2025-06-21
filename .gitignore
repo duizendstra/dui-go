@@ -2,7 +2,7 @@
 .DS_Store
 *.swp
 *.swo
-.vscode/
+/.vscode/
 .idea/
 
 # Go build artifacts and local tooling
