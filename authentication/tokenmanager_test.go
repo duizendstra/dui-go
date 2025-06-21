@@ -6,61 +6,60 @@ import (
 	"time"
 
 	"github.com/duizendstra/dui-go/cache"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestTokenManager(t *testing.T) {
-	// Use an in-memory cache for simplicity
+	// Common setup for all sub-tests
 	c := cache.NewInMemoryCache()
 	tm := NewTokenManager(c)
 
-	// 1) Register a fetcher returning a static token
+	// This fetcher is used across multiple sub-tests.
 	tm.RegisterFetcher("api-service", func() (string, time.Time, error) {
 		return "fetched-token", time.Now().Add(time.Minute), nil
 	})
 
-	// 2) Initially, no token => fetcher is called
-	token, err := tm.GetToken("api-service")
-	if err != nil {
-		t.Fatalf("unexpected error fetching token: %v", err)
-	}
-	if token != "fetched-token" {
-		t.Errorf("expected 'fetched-token', got %q", token)
-	}
-
-	// 3) Second call => cached token
-	token2, err := tm.GetToken("api-service")
-	if err != nil {
-		t.Fatalf("unexpected error second time: %v", err)
-	}
-	if token2 != "fetched-token" {
-		t.Errorf("expected 'fetched-token', got %q", token2)
-	}
-
-	// 4) Manually set a token that expires now => force re-fetch
-	tm.SetToken("api-service", "manual-token", time.Now())
-	time.Sleep(10 * time.Millisecond) // ensure it is expired
-
-	token3, err := tm.GetToken("api-service")
-	if err != nil {
-		t.Fatalf("unexpected error after expired token: %v", err)
-	}
-	if token3 != "fetched-token" {
-		t.Errorf("expected 'fetched-token' after re-fetch, got %q", token3)
-	}
-
-	// 5) Unknown service => error
-	_, err = tm.GetToken("unknown-service")
-	if err == nil {
-		t.Fatal("expected error for unknown-service")
-	}
-
-	// 6) Failing fetcher => error
-	tm.RegisterFetcher("failing-service", func() (string, time.Time, error) {
-		return "", time.Time{}, errors.New("fetch failed")
+	t.Run("it should call the fetcher when cache is empty", func(t *testing.T) {
+		token, err := tm.GetToken("api-service")
+		require.NoError(t, err)
+		assert.Equal(t, "fetched-token", token)
 	})
 
-	_, err = tm.GetToken("failing-service")
-	if err == nil || err.Error() != "failed to fetch token for key failing-service: fetch failed" {
-		t.Errorf("expected 'fetch failed' error, got %v", err)
-	}
+	t.Run("it should return the cached token on subsequent calls", func(t *testing.T) {
+		// Ensure the token is already in the cache from the previous test or a new fetch.
+		_, err := tm.GetToken("api-service")
+		require.NoError(t, err)
+
+		// This call should now hit the cache.
+		token, err := tm.GetToken("api-service")
+		require.NoError(t, err)
+		assert.Equal(t, "fetched-token", token)
+	})
+
+	t.Run("it should re-fetch when the token is expired", func(t *testing.T) {
+		// Manually set a token that is already expired.
+		tm.SetToken("api-service", "manual-expired-token", time.Now().Add(-time.Second))
+
+		// The test should now trigger a re-fetch, returning the fresh token.
+		token, err := tm.GetToken("api-service")
+		require.NoError(t, err)
+		assert.Equal(t, "fetched-token", token)
+	})
+
+	t.Run("it should return an error for an unregistered service", func(t *testing.T) {
+		_, err := tm.GetToken("unknown-service")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "no fetcher registered for key: unknown-service")
+	})
+
+	t.Run("it should return an error when the fetcher fails", func(t *testing.T) {
+		tm.RegisterFetcher("failing-service", func() (string, time.Time, error) {
+			return "", time.Time{}, errors.New("fetch failed")
+		})
+
+		_, err := tm.GetToken("failing-service")
+		require.Error(t, err)
+		assert.Equal(t, "failed to fetch token for key failing-service: fetch failed", err.Error())
+	})
 }

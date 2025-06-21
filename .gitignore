@@ -2,7 +2,7 @@
 .DS_Store
 *.swp
 *.swo
-.vscode/
+/.vscode/
 .idea/
 
 # Go build artifacts and local tooling
@@ -63,6 +63,7 @@ yarn-error.log*
 !/.idx/
 !/.idx/dev.nix
 !/.idx/airules.md
+!/.vscode/settings.json
 
 # Docs directory and its specific primary Markdown files
 !/docs/
@@ -81,6 +82,7 @@ yarn-error.log*
 !/logging/cloudlogging/ # Also un-ignore subdirectories containing Go code
 !/store/
 !/secretmanager/
+!/gcs/
 
 # Un-ignore all .go files within any directory that has been un-ignored above.
 # This is a powerful pattern to catch all Go source files.
