@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/duizendstra/dui-go/internal/testutil" // Required for the mock KV
+	"github.com/duizendstra/dui-go/testutil" // Required for the mock KV
 )
 
 // ExampleFirestoreStore demonstrates how to create and use a Firestore-backed Store.

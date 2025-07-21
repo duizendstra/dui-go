@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/duizendstra/dui-go/internal/testutil"
+	"github.com/duizendstra/dui-go/testutil"
 )
 
 // ExampleFirestoreKV demonstrates how to use a KV implementation. Here we use

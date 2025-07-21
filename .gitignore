@@ -58,18 +58,32 @@ yarn-error.log*
 !CHANGELOG.md
 !go.mod
 !go.sum
+!Taskfile.yml
 
 # Project IDX configuration directory and its contents
 !/.idx/
 !/.idx/dev.nix
 !/.idx/airules.md
+!/.idx/contextvibes.nix
+!/.idx/icon.png
+
+!/.vscode/
 !/.vscode/settings.json
+!/.vscode/launch.json
 
 # Docs directory and its specific primary Markdown files
 !/docs/
 !/docs/AI_PROJECT_SPECIFICS.md
 !/docs/ROADMAP.md
 # Add other specific primary Markdown docs in /docs/ here if any, e.g., !/docs/ANOTHER_GUIDE.md
+
+!/factory/
+!/factory/scripts/*.sh
+!/factory/scripts/README.md
+!/factory/scripts/context_helpers/
+!/factory/scripts/context_helpers/*.sh
+!/factory/tasks/
+!/factory/tasks/*.yml
 
 # Core Go source code directories - un-ignore the directories themselves
 !/authentication/

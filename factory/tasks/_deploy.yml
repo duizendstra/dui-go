@@ -1,0 +1,10 @@
+# factory/tasks/_deploy.yml
+version: '3'
+tasks:
+  deploy:
+    desc: "ACTION: Builds the container, pushes to Artifact Registry, and deploys to Cloud Run."
+    long: "This task orchestrates the entire deployment process using the configuration defined in the .env file."
+    silent: true
+    # The .env file, loaded by the root Taskfile, is required by the script.
+    cmds:
+      - ./factory/scripts/deploy.sh {{.CLI_ARGS}}

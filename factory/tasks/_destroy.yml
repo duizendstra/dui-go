@@ -1,0 +1,9 @@
+# factory/tasks/_destroy.yml
+version: '3'
+tasks:
+  destroy:
+    desc: "ACTION: Permanently destroys ALL associated GCP projects after multiple confirmations."
+    silent: true
+    cmds:
+      - |
+        gum style --border normal --margin "1" --padding "1 2" --border-foreground 212 "This command is a placeholder and is not yet implemented."
