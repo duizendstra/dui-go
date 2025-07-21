@@ -23,7 +23,10 @@
 
 package cloudlogging
 
-import "log/slog"
+import (
+	"log/slog"
+	"strings" // Required for case-insensitive comparison
+)
 
 // Custom log levels for Cloud Logging.
 // These constants are offsets from slog's built-in levels (e.g., slog.LevelInfo, slog.LevelError).
@@ -60,20 +63,21 @@ const (
 //
 // The function ensures that external configurations can easily match a string
 // severity like "NOTICE" or "CRITICAL" to the appropriate slog level, allowing
-// flexible configuration of log thresholds or severity mappings.
+// flexible configuration of log thresholds or severity mappings. The comparison
+// is case-insensitive.
 //
 // If the provided string does not match any known severity, it defaults to
 // slog.LevelInfo for safety. This default ensures that logs are produced with
 // at least a known level, rather than failing silently.
 func StringToLevel(level string) slog.Level {
-	switch level {
+	switch strings.ToUpper(level) {
 	case "DEBUG":
 		return slog.LevelDebug
 	case "INFO":
 		return slog.LevelInfo
 	case "NOTICE":
 		return LevelNotice
-	case "WARNING":
+	case "WARN", "WARNING": // Handle both common abbreviations
 		return slog.LevelWarn
 	case "ERROR":
 		return slog.LevelError
@@ -84,7 +88,6 @@ func StringToLevel(level string) slog.Level {
 	case "EMERGENCY":
 		return LevelEmergency
 	default:
-		// Fallback to INFO if the level is unknown.
-		return slog.LevelInfo
+		return slog.LevelInfo // Default fallback
 	}
 }
