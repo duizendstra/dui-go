@@ -1,0 +1,9 @@
+# factory/tasks/_task-finish.yml
+version: '3'
+
+tasks:
+  task-finish:
+    desc: "Syncs the current branch and opens a browser to create a PR."
+    silent: true
+    cmds:
+      - ./factory/scripts/task_finish.sh

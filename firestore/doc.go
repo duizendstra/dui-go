@@ -33,5 +33,5 @@
 //
 // For testing code that depends on FirestoreKV without connecting to a real Firestore
 // instance, consider using the MockFirestoreKV from the internal/testutil package
-// (github.com/duizendstra/dui-go/internal/testutil).
+// (github.com/duizendstra/dui-go/testutil).
 package firestore

@@ -1,0 +1,14 @@
+go 1.24.4
+
+use (
+	./authentication
+	./cache
+	./env
+	./errors
+	./firestore
+	./gcs
+	./logging/cloudlogging
+	./secretmanager
+	./store
+	./testutil
+)

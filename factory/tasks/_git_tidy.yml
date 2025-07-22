@@ -1,0 +1,10 @@
+# factory/tasks/_git_tidy.yml
+version: '3'
+
+tasks:
+  git-tidy:
+    desc: "ACTION: Interactively manage Git branches (prune, finish merged)."
+    long: "Runs a smart, interactive script to help with Git branch hygiene, such as finishing merged branches or pruning stale local branches."
+    silent: true
+    cmds:
+      - ./factory/scripts/git_tidy.sh {{.CLI_ARGS}}

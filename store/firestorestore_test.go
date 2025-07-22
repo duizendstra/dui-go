@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/duizendstra/dui-go/internal/testutil"
+	"github.com/duizendstra/dui-go/testutil"
 )
 
 // TestFirestoreStoreWithMock demonstrates how to test the FirestoreStore using a mock

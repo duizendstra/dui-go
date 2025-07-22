@@ -1,0 +1,9 @@
+# factory/tasks/_verify.yml
+version: '3'
+tasks:
+  verify:
+    desc: "VIEW: Runs an automated health check on all provisioned GCP infrastructure."
+    silent: true
+    cmds:
+      - |
+        gum style --border normal --margin "1" --padding "1 2" --border-foreground 212 "This command is a placeholder and is not yet implemented."

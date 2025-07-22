@@ -1,0 +1,12 @@
+# factory/tasks/_release.yml
+version: '3'
+tasks:
+  release:
+    desc: "ACTION: Creates a versioned release (tests, tags, builds, deploys)."
+    long: |
+      Runs the full, guarded release pipeline. Requires a version number.
+      Example: task release -- v1.2.3
+    silent: true
+    cmds:
+      # The '--' is critical. It passes the version number to the script.
+      - ./factory/scripts/release.sh {{.CLI_ARGS}}
