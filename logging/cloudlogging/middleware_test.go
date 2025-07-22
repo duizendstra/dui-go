@@ -1,11 +1,15 @@
 package cloudlogging
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // checkContextValues is a test helper that runs the middleware and verifies
@@ -23,7 +27,6 @@ func checkContextValues(t *testing.T, req *http.Request, expectedTracePrefixProj
 			t.Errorf("Context trace: got %q, want %q", trace, expectedTraceString)
 		}
 
-		// *** FIXED LOGIC ***
 		// Correctly check for span presence and value.
 		if expectedSpanID != "" {
 			if !spanOK || spanID != expectedSpanID {
@@ -59,10 +62,12 @@ func checkContextValues(t *testing.T, req *http.Request, expectedTracePrefixProj
 
 // --- Middleware Tests ---
 
-// TestDetermineProjectID remains the same as it was already correct.
+// TestDetermineProjectID specifically tests the project ID determination logic,
+// covering precedence (metadata, environment variable, default) and the use of sync.Once.
 func TestDetermineProjectID(t *testing.T) {
 	originalFetcher := fetcher
 	originalEnv, envSet := os.LookupEnv("GOOGLE_CLOUD_PROJECT")
+	// Ensure original fetcher and env var are restored after the test.
 	t.Cleanup(func() {
 		SetProjectIDFetcher(originalFetcher)
 		if envSet {
@@ -70,38 +75,49 @@ func TestDetermineProjectID(t *testing.T) {
 		} else {
 			os.Unsetenv("GOOGLE_CLOUD_PROJECT")
 		}
-		resetDetermineProjectID()
+		resetDetermineProjectID() // Reset after all sub-tests in this function complete.
 	})
 
 	t.Run("Metadata Success", func(t *testing.T) {
-		resetDetermineProjectID()
-		SetProjectIDFetcher(&mockProjectIDFetcher{id: "proj-meta", err: nil})
-		os.Unsetenv("GOOGLE_CLOUD_PROJECT")
-		if id := determineProjectID(); id != "proj-meta" {
-			t.Errorf("got %q, want %q", id, "proj-meta")
+		resetDetermineProjectID() // Reset for this specific sub-test.
+		mockFetcher := &mockProjectIDFetcher{id: "proj-meta", err: nil}
+		SetProjectIDFetcher(mockFetcher)
+		os.Unsetenv("GOOGLE_CLOUD_PROJECT") // Ensure env var is not set.
+
+		// First call should use the mock fetcher.
+		id := determineProjectID()
+		if id != "proj-meta" {
+			t.Errorf("Expected project ID 'proj-meta', got %q", id)
 		}
 	})
 
 	t.Run("Metadata Fails, Env Set", func(t *testing.T) {
 		resetDetermineProjectID()
-		SetProjectIDFetcher(&mockProjectIDFetcher{id: "", err: errors.New("metadata unavailable")})
-		os.Setenv("GOOGLE_CLOUD_PROJECT", "proj-env")
-		if id := determineProjectID(); id != "proj-env" {
-			t.Errorf("got %q, want %q", id, "proj-env")
+		mockFetcher := &mockProjectIDFetcher{id: "", err: errors.New("metadata unavailable")} // Simulate fetcher error.
+		SetProjectIDFetcher(mockFetcher)
+		os.Setenv("GOOGLE_CLOUD_PROJECT", "proj-env") // Set env var fallback.
+
+		id := determineProjectID()
+		if id != "proj-env" { // Should use the env var.
+			t.Errorf("Expected project ID 'proj-env', got %q", id)
 		}
 	})
 
 	t.Run("Metadata Fails, Env Unset", func(t *testing.T) {
 		resetDetermineProjectID()
-		SetProjectIDFetcher(&mockProjectIDFetcher{id: "", err: errors.New("metadata unavailable")})
-		os.Unsetenv("GOOGLE_CLOUD_PROJECT")
-		if id := determineProjectID(); id != "unknown-project" {
-			t.Errorf("got %q, want %q", id, "unknown-project")
+		mockFetcher := &mockProjectIDFetcher{id: "", err: errors.New("metadata unavailable")} // Simulate fetcher error.
+		SetProjectIDFetcher(mockFetcher)
+		os.Unsetenv("GOOGLE_CLOUD_PROJECT") // Ensure env var is also unset.
+
+		id := determineProjectID()
+		if id != "unknown-project" { // Should use the hardcoded default.
+			t.Errorf("Expected project ID 'unknown-project', got %q", id)
 		}
 	})
 }
 
-// TestWithCloudTraceContext now uses the corrected helper.
+// TestWithCloudTraceContext focuses on the middleware's ability to parse the
+// X-Cloud-Trace-Context header and inject the correct values into the request context.
 func TestWithCloudTraceContext(t *testing.T) {
 	resetDetermineProjectID()
 	SetProjectIDFetcher(&mockProjectIDFetcher{id: "p-test", err: nil})
@@ -110,11 +126,11 @@ func TestWithCloudTraceContext(t *testing.T) {
 	})
 
 	testCases := []struct {
-		name           string
-		header         string
-		expectedTrace  string
-		expectedSpan   string
-		expectSampled  bool
+		name          string
+		header        string
+		expectedTrace string
+		expectedSpan  string
+		expectSampled bool
 	}{
 		{"Full Header, Sampled", "trace123/span456;o=1", "trace123", "span456", true},
 		{"Full Header, Not Sampled", "traceABC/spanDEF;o=0", "traceABC", "spanDEF", false},
@@ -133,4 +149,36 @@ func TestWithCloudTraceContext(t *testing.T) {
 			checkContextValues(t, req, "p-test", tc.expectedTrace, tc.expectedSpan, tc.expectSampled)
 		})
 	}
+}
+
+// TestWithTrace specifically tests the WithTrace helper function, ensuring it
+// correctly injects a formatted trace string into the context.
+func TestWithTrace(t *testing.T) {
+	// Setup: Ensure a deterministic project ID for the test.
+	originalFetcher := fetcher
+	SetProjectIDFetcher(&mockProjectIDFetcher{id: "test-project", err: nil})
+	t.Cleanup(func() {
+		SetProjectIDFetcher(originalFetcher)
+		resetDetermineProjectID()
+	})
+
+	// The trace ID we want to inject.
+	traceID := "my-job-trace-id-123"
+
+	// Execution: Call the function under test.
+	ctx := WithTrace(context.Background(), traceID)
+
+	// Verification: Check the context for the correct values.
+	// 1. Check that the trace value was added correctly.
+	traceVal, ok := ctx.Value(traceKey{}).(string)
+	require.True(t, ok, "traceKey should exist in the context")
+	expectedTrace := "projects/test-project/traces/my-job-trace-id-123"
+	assert.Equal(t, expectedTrace, traceVal)
+
+	// 2. Check that span and sampled keys were NOT added.
+	_, spanOK := ctx.Value(spanIDKey{}).(string)
+	assert.False(t, spanOK, "spanIDKey should not be set by WithTrace")
+
+	_, sampledOK := ctx.Value(traceSampledKey{}).(bool)
+	assert.False(t, sampledOK, "traceSampledKey should not be set by WithTrace")
 }

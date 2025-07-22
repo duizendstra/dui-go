@@ -1,4 +1,4 @@
-// dui-go/pkg/logging/cloudlogging/example_test.go
+// dui-go/logging/cloudlogging/example_test.go
 //
 // This file provides a runnable example demonstrating how to use the
 // CloudLoggingHandler and WithCloudTraceContext middleware together.
@@ -56,4 +56,7 @@ func ExampleNewCloudLoggingHandler() {
 
 	// Note: The actual logs will be printed to stderr in JSON format.
 	// The trace info will be included in the logs related to the handled request.
+
+	// Output:
+	// Response body: Hello, Cloud Logging with Trace!
 }

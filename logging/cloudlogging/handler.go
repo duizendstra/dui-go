@@ -51,13 +51,16 @@ func cloudLoggingReplaceAttr(groups []string, a slog.Attr) slog.Attr {
 }
 
 // CloudLoggingHandler is a custom slog.Handler for Google Cloud Logging.
+// It embeds an underlying slog.Handler to automatically delegate methods like
+// WithAttrs, WithGroup, and Enabled.
 type CloudLoggingHandler struct {
-	handler slog.Handler
+	slog.Handler
 }
 
-// newCloudLoggingHandlerWithWriter is an internal constructor that allows specifying the output writer.
-// This is primarily for testing.
-func newCloudLoggingHandlerWithWriter(out io.Writer, component string) *CloudLoggingHandler {
+// NewCloudLoggingHandlerForTest creates a CloudLoggingHandler that writes to the
+// provided io.Writer instead of os.Stderr. This is useful for capturing and
+// asserting on log output in tests.
+func NewCloudLoggingHandlerForTest(out io.Writer, component string) *CloudLoggingHandler {
 	var levelVar slog.LevelVar
 	envLogLevel := os.Getenv("LOG_LEVEL")
 	levelVar.Set(StringToLevel(envLogLevel))
@@ -68,30 +71,33 @@ func newCloudLoggingHandlerWithWriter(out io.Writer, component string) *CloudLog
 		ReplaceAttr: cloudLoggingReplaceAttr,
 	})
 
+	// Add the component as a permanent attribute to the handler.
 	handlerWithAttrs := baseHandler.WithAttrs([]slog.Attr{
 		slog.String("component", component),
 	})
 
-	return &CloudLoggingHandler{handler: handlerWithAttrs}
+	return &CloudLoggingHandler{Handler: handlerWithAttrs}
 }
 
-// NewCloudLoggingHandler creates a new CloudLoggingHandler that writes to os.Stderr.
+// NewCloudLoggingHandler creates a new CloudLoggingHandler that writes to os.Stderr
+// for use in production.
 func NewCloudLoggingHandler(component string) *CloudLoggingHandler {
-	return newCloudLoggingHandlerWithWriter(os.Stderr, component)
+	return NewCloudLoggingHandlerForTest(os.Stderr, component)
 }
 
 // Handle processes a log record, adding Cloud Trace context before passing it
-// to the underlying JSON handler.
+// to the embedded JSON handler.
 func (h *CloudLoggingHandler) Handle(ctx context.Context, rec slog.Record) error {
 	rec = rec.Clone()
 
-	// Determine the project ID using the cached, testable function from middleware.go
+	// Determine the project ID using the cached, testable function.
 	projectID := determineProjectID()
 
 	traceVal, _ := ctx.Value(traceKey{}).(string)
 	spanIDVal, _ := ctx.Value(spanIDKey{}).(string)
 	sampledVal, _ := ctx.Value(traceSampledKey{}).(bool)
 
+	// If no trace is in the context, create a default one.
 	if traceVal == "" {
 		traceVal = "projects/" + projectID + "/traces/unknown-trace"
 	}
@@ -102,20 +108,6 @@ func (h *CloudLoggingHandler) Handle(ctx context.Context, rec slog.Record) error
 	}
 	rec.AddAttrs(slog.Bool("logging.googleapis.com/trace_sampled", sampledVal))
 
-	return h.handler.Handle(ctx, rec)
-}
-
-// WithAttrs delegates to the wrapped handler, returning a new CloudLoggingHandler.
-func (h *CloudLoggingHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return &CloudLoggingHandler{handler: h.handler.WithAttrs(attrs)}
-}
-
-// WithGroup delegates to the wrapped handler, returning a new CloudLoggingHandler.
-func (h *CloudLoggingHandler) WithGroup(name string) slog.Handler {
-	return &CloudLoggingHandler{handler: h.handler.WithGroup(name)}
-}
-
-// Enabled delegates to the wrapped handler.
-func (h *CloudLoggingHandler) Enabled(ctx context.Context, level slog.Level) bool {
-	return h.handler.Enabled(ctx, level)
+	// Delegate the final handling to the embedded handler.
+	return h.Handler.Handle(ctx, rec)
 }

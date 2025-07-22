@@ -34,7 +34,6 @@ func TestNewCloudLoggingHandler_LevelFromEnv(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// *** FIXED LINE ***
 			// Backup and restore the environment variable INSIDE the sub-test
 			// to prevent state from leaking between test cases.
 			originalLevel, levelSet := os.LookupEnv("LOG_LEVEL")
@@ -55,7 +54,7 @@ func TestNewCloudLoggingHandler_LevelFromEnv(t *testing.T) {
 
 			// Create the handler which will read the environment variable.
 			var buf bytes.Buffer
-			handler := newCloudLoggingHandlerWithWriter(&buf, "test-component")
+			handler := NewCloudLoggingHandlerForTest(&buf, "test-component")
 
 			// Assert that the Enabled method works as expected.
 			assert.Equal(t, tc.expectEnabled, handler.Enabled(context.Background(), tc.testLevel))
@@ -73,7 +72,7 @@ func TestCloudLoggingHandler_Handle(t *testing.T) {
 
 	t.Run("adds trace, span, and sampled info from context", func(t *testing.T) {
 		var buf bytes.Buffer
-		h := newCloudLoggingHandlerWithWriter(&buf, "test-component")
+		h := NewCloudLoggingHandlerForTest(&buf, "test-component")
 		logger := slog.New(h)
 
 		ctx := context.WithValue(context.Background(), traceKey{}, "projects/test-proj/traces/trace-abc")
@@ -102,7 +101,7 @@ func TestCloudLoggingHandler_Handle(t *testing.T) {
 		})
 
 		var buf bytes.Buffer
-		h := newCloudLoggingHandlerWithWriter(&buf, "test-component")
+		h := NewCloudLoggingHandlerForTest(&buf, "test-component")
 		logger := slog.New(h)
 
 		logger.InfoContext(context.Background(), "message without trace")
@@ -118,7 +117,7 @@ func TestCloudLoggingHandler_Handle(t *testing.T) {
 
 	t.Run("adds source location for all levels", func(t *testing.T) {
 		var buf bytes.Buffer
-		h := newCloudLoggingHandlerWithWriter(&buf, "test-component")
+		h := NewCloudLoggingHandlerForTest(&buf, "test-component")
 		logger := slog.New(h)
 
 		logger.Info("a message that should have source")

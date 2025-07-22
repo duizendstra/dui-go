@@ -45,6 +45,8 @@ func SetProjectIDFetcher(f projectIDFetcher) {
 }
 
 // determineProjectID gets the GCP Project ID, caching the result for performance.
+// It checks the metadata service first, then the GOOGLE_CLOUD_PROJECT env var,
+// and finally falls back to "unknown-project".
 func determineProjectID() string {
 	projectIDOnce.Do(func() {
 		projID, err := fetcher.ProjectID(context.Background())
@@ -89,7 +91,7 @@ func deconstructXCloudTraceContext(headerValue string) (traceID, spanID string, 
 	return
 }
 
-// --- Middleware Function ---
+// --- Middleware and Helper Functions ---
 
 // WithCloudTraceContext is an HTTP middleware that extracts trace information
 // from the "X-Cloud-Trace-Context" header and injects it into the request's context.
@@ -119,4 +121,17 @@ func WithCloudTraceContext(h http.Handler) http.Handler {
 
 		h.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// WithTrace creates a new context annotated with a Google Cloud Trace ID.
+// It is intended for non-HTTP applications (like Cloud Run Jobs) where a trace
+// is not propagated via incoming request headers.
+//
+// The traceID provided will be used to formulate the full trace string, e.g.,
+// "projects/your-project-id/traces/your-trace-id". The project ID is determined
+// automatically.
+func WithTrace(ctx context.Context, traceID string) context.Context {
+	projectID := determineProjectID()
+	trace := fmt.Sprintf("projects/%s/traces/%s", projectID, traceID)
+	return context.WithValue(ctx, traceKey{}, trace)
 }
